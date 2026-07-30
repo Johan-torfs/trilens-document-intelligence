@@ -475,6 +475,21 @@ Model-dependent tests use mocks where possible. CI should not download large mod
 
 ---
 
+## Continuous integration
+
+GitHub Actions validates every pull request and every push to `main`.
+
+The CI workflow runs:
+
+- the complete Python test suite on Python 3.12;
+- frontend dependency installation through `npm ci`;
+- Next.js linting;
+- a production Next.js build.
+
+Model downloads are disabled in CI. Tests use mocks for heavyweight model integrations such as CLIP, BLIP and OpenFlamingo.
+
+---
+
 ## Privacy
 
 TriLens is designed as a local portfolio and research project.
