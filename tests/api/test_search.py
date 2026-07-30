@@ -106,7 +106,13 @@ def test_search_returns_hybrid_results() -> None:
 
 
 def test_search_rejects_invalid_top_k() -> None:
+    pipeline = MagicMock()
+
     app = create_app()
+    app.dependency_overrides[get_pipeline] = (
+        lambda: pipeline
+    )
+
     client = TestClient(app)
 
     response = client.post(
@@ -118,3 +124,4 @@ def test_search_rejects_invalid_top_k() -> None:
     )
 
     assert response.status_code == 422
+    pipeline.search.assert_not_called()

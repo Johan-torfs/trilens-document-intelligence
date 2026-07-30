@@ -44,7 +44,7 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       - name: Run Python tests
-        run: python -m pytest
+        run: python -m pytest -m "not model_integration"
 
   frontend:
     name: Frontend lint and build

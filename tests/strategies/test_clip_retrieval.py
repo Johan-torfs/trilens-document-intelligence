@@ -6,6 +6,8 @@ from pathlib import Path
 from app.strategies.clip_retrieval import ClipRetrievalStrategy
 from app.preprocessing.pipeline import preprocess_image
 
+pytestmark = pytest.mark.model_integration
+
 
 @pytest.fixture(scope="module")
 def strategy() -> ClipRetrievalStrategy:

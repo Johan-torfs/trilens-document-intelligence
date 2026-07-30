@@ -84,4 +84,7 @@ exclude = ["tests/", "scripts/", "ui/"]
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = ["-v --tb=short", "--strict-markers"]
+markers = [
+    "model_integration: requires pretrained model downloads or local generated datasets",
+]
