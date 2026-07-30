@@ -1,0 +1,59 @@
+# requirements.txt — pinned dependency versions for TriLens Document Intelligence.
+#
+# These pins reflect the combination known to work together, in particular the
+# constraint that OpenFlamingo 3B requires transformers 4.x and is incompatible
+# with transformers 5.
+#
+# Usage (after creating and activating a virtual environment):
+#
+#   pip install -r requirements.txt
+#
+# For a development environment also run:
+#
+#   pip install -e ".[dev]"
+
+# ── PyTorch ─────────────────────────────────────────────────────────────────
+# Install the CPU or CUDA build that matches your hardware.
+# See https://pytorch.org/get-started/locally/ for the correct index URL.
+torch==2.2.*
+torchvision==0.17.*
+
+# ── Hugging Face ecosystem ───────────────────────────────────────────────────
+# transformers 5 breaks the OpenFlamingo model loading API — keep pinned to 4.x.
+transformers==4.49.*
+tokenizers>=0.21,<0.22
+huggingface-hub>=0.30,<0.32
+fsspec>=2024.2,<2026
+
+# ── OpenFlamingo ─────────────────────────────────────────────────────────────
+# open_flamingo is not on PyPI with a stable release that targets transformers 4.x.
+# Install from the specific Git commit that is known to work:
+#
+#   pip install git+https://github.com/mlfoundations/open_flamingo.git@<commit>
+#
+# Replace <commit> with the SHA or tag you have tested against.
+# OpenFlamingo analysis is optional — the application runs without it.
+
+# ── Core application ─────────────────────────────────────────────────────────
+Pillow>=10.3,<12
+numpy>=1.26,<3
+pydantic>=2.7,<3
+pydantic-settings>=2.3,<3
+pyyaml>=6.0,<7
+python-dotenv>=1.0,<2
+click>=8.1,<9
+
+# ── API ──────────────────────────────────────────────────────────────────────
+fastapi>=0.111,<1
+uvicorn[standard]>=0.30,<1
+
+# ── Optional: Streamlit UI ───────────────────────────────────────────────────
+# Uncomment to enable the Streamlit prototype interface.
+streamlit>=1.35,<2
+
+# ── Development ──────────────────────────────────────────────────────────────
+# Install with: pip install -e ".[dev]"
+pytest>=8.2
+pytest-cov>=5.0
+ruff>=0.4
+mypy>=1.10
