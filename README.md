@@ -26,13 +26,29 @@ De primaire interface bestaat uit één dashboard:
 4. vergelijk CLIP- en hybride rankingscores;
 5. voer rechtstreeks op een zoekresultaat een experimentele analyse uit.
 
-<!-- Voeg hier later screenshots toe. -->
+### Unified dashboard
 
-```text
-docs/screenshots/upload.png
-docs/screenshots/search-results.png
-docs/screenshots/inline-analysis.png
-```
+The primary Next.js interface combines document upload and semantic search in a single dashboard.
+
+![TriLens dashboard with upload and search forms](docs/screenshots/01-dashboard.png)
+
+### Semantic document retrieval
+
+Search results include the document image, BLIP caption and individual ranking signals for CLIP, caption similarity and metadata similarity.
+
+![TriLens hybrid document search results](docs/screenshots/02-search-results.png)
+
+### Inline document analysis
+
+A selected result can be analysed directly without navigating to a separate page. OpenFlamingo is optional, and TriLens can expose a BLIP caption fallback when analysis is unavailable.
+
+![TriLens inline document analysis](docs/screenshots/03-inline-analysis.png)
+
+### Document indexing
+
+Uploaded images are validated, preprocessed, embedded with CLIP and captioned with BLIP.
+
+![TriLens document indexing result](docs/screenshots/04-upload-result.png)
 
 ---
 
@@ -226,7 +242,7 @@ OpenFlamingo vereist meerdere gigabytes aan modelbestanden en is niet nodig voor
 Clone de repository:
 
 ```bash
-git clone <REPOSITORY_URL>
+git clone https://github.com/Johan-torfs/trilens-document-intelligence.git
 cd trilens-document-intelligence
 ```
 
@@ -597,6 +613,18 @@ Gepland na MVP 1:
 
 ## Licentie
 
-Voeg hier de gekozen projectlicentie toe.
+De eigen broncode en projectdocumentatie van TriLens Document Intelligence worden beschikbaar gesteld onder de MIT License.
 
-Externe datasets en modelweights behouden hun eigen licentievoorwaarden.
+Zie [LICENSE](LICENSE) voor de volledige licentietekst.
+
+Deze licentie geldt niet automatisch voor:
+
+- externe modelweights;
+- externe datasets;
+- afbeeldingen uit externe datasets;
+- softwaredependencies;
+- code of assets van derden.
+
+CLIP-, BLIP- en OpenFlamingo-modellen en hun checkpoints behouden hun eigen licentievoorwaarden. Hetzelfde geldt voor Hugging Face-datasets en andere publieke databronnen.
+
+Gebruikers en bijdragers zijn zelf verantwoordelijk voor het controleren van de toepasselijke model-, dataset- en dependencylicenties voordat zij bestanden herverdelen, publiceren of commercieel gebruiken.
