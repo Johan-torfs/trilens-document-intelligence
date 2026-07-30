@@ -1,0 +1,95 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Distribution / packaging
+*.whl
+*.tar.gz
+
+# mypy
+.mypy_cache/
+.dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# pytest
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# pre-commit
+.pre-commit-cache/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.dockerenv
+
+# TriLens — data (images, processed files, embeddings)
+data/generated/
+data/augmented/
+data/external/
+data/processed/
+data/runtime/
+data/manifest.jsonl
+data/dataset_summary.json
+
+# TriLens — model cache and weights
+models/
+model_cache/
+*.bin
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+
+# TriLens — database and vector store
+*.db
+*.sqlite
+*.sqlite3
+embeddings/
+vectors/
+
+# TriLens — evaluation results
+evaluation/results/
+
+# TriLens — logs
+logs/
+*.log
+
+# Jupyter (if used for exploration)
+.ipynb_checkpoints/
+*.ipynb
+
+# Hugging Face cache (if redirected to project folder)
+.cache/
