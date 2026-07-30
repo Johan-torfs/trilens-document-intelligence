@@ -1,30 +1,30 @@
 # TriLens Document Intelligence
 
-TriLens is een lokale multimodale document-intelligenceapplicatie voor visuele documentindexering, semantische retrieval, automatische captioning en experimentele documentanalyse.
+TriLens is a local multimodal document intelligence application for visual document indexing, semantic retrieval, automatic captioning and experimental document analysis.
 
-De applicatie combineert:
+The application combines:
 
-- **CLIP** voor image-text retrieval;
-- **BLIP** voor automatische documentcaptions;
-- **OpenFlamingo** voor optionele vraaggestuurde documentanalyse;
-- **FastAPI** als backend-API;
-- **Next.js** als primaire gebruikersinterface;
-- **Streamlit** als oorspronkelijke prototype-interface;
-- **SQLite en NumPy** voor lokale metadata- en embeddingopslag.
+- **CLIP** for image-text retrieval;
+- **BLIP** for automatic document captions;
+- **OpenFlamingo** for optional query-driven document analysis;
+- **FastAPI** as the backend API;
+- **Next.js** as the primary user interface;
+- **Streamlit** as the original prototype interface;
+- **SQLite and NumPy** for local metadata and embedding storage.
 
-> TriLens is een portfolio- en leerproject. Modeloutput kan onnauwkeurig zijn en mag niet worden gebruikt als juridisch, financieel of identiteitsadvies.
+> TriLens is a portfolio and learning project. Model output may be inaccurate and must not be used as legal, financial or identity advice.
 
 ---
 
 ## Demo
 
-De primaire interface bestaat uit één dashboard:
+The primary interface consists of a single dashboard:
 
-1. upload een documentafbeelding;
-2. laat CLIP en BLIP het document verwerken;
-3. zoek documenten met natuurlijke taal;
-4. vergelijk CLIP- en hybride rankingscores;
-5. voer rechtstreeks op een zoekresultaat een experimentele analyse uit.
+1. upload a document image;
+2. let CLIP and BLIP process the document;
+3. search documents with natural language;
+4. compare CLIP and hybrid ranking scores;
+5. run experimental analysis directly on a search result.
 
 ### Unified dashboard
 
@@ -52,13 +52,13 @@ Uploaded images are validated, preprocessed, embedded with CLIP and captioned wi
 
 ---
 
-## Probleemstelling
+## Problem statement
 
-Documentzoekmachines vertrouwen vaak op bestandsnamen, handmatig ingevoerde metadata of OCR-tekst.
+Document search engines often rely on file names, manually entered metadata or OCR text.
 
-TriLens onderzoekt een andere benadering: documenten zoeken op basis van hun visuele en semantische kenmerken.
+TriLens explores a different approach: searching documents based on their visual and semantic characteristics.
 
-Voorbeeldqueries:
+Example queries:
 
 ```text
 invoice with several product rows
@@ -68,11 +68,11 @@ document containing a signature
 identity document
 ```
 
-Hierdoor kunnen documenten ook worden teruggevonden wanneer de exacte woorden uit de query niet letterlijk in het document voorkomen.
+This allows documents to be retrieved even when the exact words from the query do not literally appear in the document.
 
 ---
 
-## Architectuur
+## Architecture
 
 ```text
 Next.js dashboard
@@ -106,90 +106,90 @@ DocumentIntelligencePipeline
 SQLite metadata + NumPy embeddings
 ```
 
-De applicatie gebruikt een gedeelde application pipeline. FastAPI en Streamlit zijn dunne adapters rond dezelfde services en domeinlogica.
+The application uses a shared application pipeline. FastAPI and Streamlit are thin adapters around the same services and domain logic.
 
 ---
 
-## CLIP, BLIP en OpenFlamingo
+## CLIP, BLIP and OpenFlamingo
 
 ### CLIP
 
-CLIP zet afbeeldingen en tekst om naar vectoren in een gedeelde embeddingruimte.
+CLIP converts images and text into vectors in a shared embedding space.
 
-TriLens gebruikt CLIP voor:
+TriLens uses CLIP for:
 
-- documentafbeeldingen indexeren;
-- zoekqueries encoderen;
-- cosine similarity berekenen;
-- top-k-documenten rangschikken.
+- indexing document images;
+- encoding search queries;
+- computing cosine similarity;
+- ranking top-k documents.
 
-CLIP is geen OCR-systeem. Het is vooral geschikt voor visuele en semantische overeenkomsten.
+CLIP is not an OCR system. It is primarily suited for visual and semantic similarity.
 
 ### BLIP
 
-BLIP genereert een korte beschrijving van een documentafbeelding.
+BLIP generates a short description of a document image.
 
-De caption wordt:
+The caption is:
 
-- opgeslagen als modelartifact;
-- weergegeven in zoekresultaten;
-- gebruikt als extra signaal bij hybride ranking;
-- gebruikt als fallback wanneer OpenFlamingo geen analyse kan leveren.
+- stored as a model artifact;
+- displayed in search results;
+- used as an additional signal in hybrid ranking;
+- used as a fallback when OpenFlamingo cannot provide analysis.
 
 ### OpenFlamingo
 
-OpenFlamingo wordt experimenteel gebruikt om een vraag over één geselecteerd document te beantwoorden.
+OpenFlamingo is used experimentally to answer a question about a single selected document.
 
 OpenFlamingo:
 
-- staat standaard uit;
-- wordt lazy geladen;
-- kan zeer traag zijn op CPU;
-- vereist veel geheugen;
-- kan visuele details verkeerd interpreteren of hallucineren.
+- is disabled by default;
+- is lazily loaded;
+- can be very slow on CPU;
+- requires a large amount of memory;
+- may misinterpret or hallucinate visual details.
 
-Op systemen met ongeveer 8 GB GPU-geheugen past de huidige configuratie mogelijk niet volledig in GPU-geheugen.
+On systems with approximately 8 GB of GPU memory, the current configuration may not fit entirely in GPU memory.
 
 ---
 
-## Functionaliteiten
+## Features
 
-### Documentindexering
+### Document indexing
 
-- PNG-, JPG- en JPEG-bestanden;
-- bestand- en afbeeldingsvalidatie;
-- SHA-256-checksum;
-- detectie van eerder geïndexeerde documenten;
+- PNG, JPG and JPEG files;
+- file and image validation;
+- SHA-256 checksum;
+- detection of previously indexed documents;
 - preprocessing;
-- CLIP-image-embedding;
-- BLIP-caption;
-- gedeeltelijk herstel wanneer één modelstap faalt;
-- lokale opslag van metadata en artifacts.
+- CLIP image embedding;
+- BLIP caption;
+- partial recovery when one model step fails;
+- local storage of metadata and artifacts.
 
-### Zoeken
+### Search
 
-- natuurlijke-taalqueries;
-- top-k-ranking;
-- filteren op documenttype;
-- CLIP-baseline;
-- optionele hybride ranking;
-- individuele scores voor:
+- natural language queries;
+- top-k ranking;
+- filtering by document type;
+- CLIP baseline;
+- optional hybrid ranking;
+- individual scores for:
   - CLIP;
-  - captionovereenkomst;
-  - metadataovereenkomst;
-  - uiteindelijke ranking.
+  - caption similarity;
+  - metadata similarity;
+  - final ranking.
 
-### Analyse
+### Analysis
 
-- vraaggestuurde analyse van één document;
-- optionele OpenFlamingo-uitvoering;
-- BLIP-captionfallback;
-- modelnaam, bron en runtime in de response;
-- waarschuwing voor onbetrouwbare modeloutput.
+- query-driven analysis of a single document;
+- optional OpenFlamingo execution;
+- BLIP caption fallback;
+- model name, source and runtime in the response;
+- warning for unreliable model output.
 
 ---
 
-## Projectstructuur
+## Project structure
 
 ```text
 trilens-document-intelligence/
@@ -219,53 +219,53 @@ trilens-document-intelligence/
 └── README.md
 ```
 
-Runtimebestanden, uploads, databases, embeddings en modelcaches horen niet in Git.
+Runtime files, uploads, databases, embeddings and model caches do not belong in Git.
 
 ---
 
-## Vereisten
+## Requirements
 
-Aanbevolen lokale omgeving:
+Recommended local environment:
 
 - Python 3.12;
-- Node.js 20 of nieuwer;
+- Node.js 20 or newer;
 - npm;
-- voldoende vrije schijfruimte voor modelbestanden;
-- optioneel een CUDA-compatibele GPU.
+- sufficient free disk space for model files;
+- optionally a CUDA-compatible GPU.
 
-OpenFlamingo vereist meerdere gigabytes aan modelbestanden en is niet nodig voor upload, captioning of retrieval.
+OpenFlamingo requires several gigabytes of model files and is not required for upload, captioning or retrieval.
 
 ---
 
-## Installatie
+## Installation
 
-Clone de repository:
+Clone the repository:
 
 ```bash
 git clone https://github.com/Johan-torfs/trilens-document-intelligence.git
 cd trilens-document-intelligence
 ```
 
-Maak een Python virtual environment:
+Create a Python virtual environment:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 ```
 
-Installeer de Python-dependencies met de installatiemethode van het project:
+Install the Python dependencies using the project installation method:
 
 ```bash
 pip install -e .
 ```
 
-Wanneer het project nog geen installeerbare dependencyconfiguratie in `pyproject.toml` bevat, gebruik dan het bijgeleverde requirementsbestand:
+If the project does not yet have an installable dependency configuration in `pyproject.toml`, use the provided requirements file:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Installeer de frontend:
+Install the frontend:
 
 ```bash
 cd frontend
@@ -275,21 +275,21 @@ cd ..
 
 ---
 
-## Configuratie
+## Configuration
 
-Kopieer de backendconfiguratie:
+Copy the backend configuration:
 
 ```bash
 cp .env.example .env
 ```
 
-Kopieer de frontendconfiguratie:
+Copy the frontend configuration:
 
 ```bash
 cp frontend/.env.example frontend/.env.local
 ```
 
-### Backendvariabelen
+### Backend variables
 
 ```env
 TRILENS_OPEN_FLAMINGO_ENABLED=false
@@ -297,19 +297,19 @@ TRILENS_OPEN_FLAMINGO_DEVICE=cpu
 TRILENS_CORS_ORIGINS=http://localhost:3000
 ```
 
-### Frontendvariabelen
+### Frontend variables
 
 ```env
 NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
 ```
 
-OpenFlamingo blijft voor de standaard-MVP uitgeschakeld:
+OpenFlamingo remains disabled for the default MVP:
 
 ```env
 TRILENS_OPEN_FLAMINGO_ENABLED=false
 ```
 
-Experimentele CPU-analyse inschakelen:
+Enable experimental CPU analysis:
 
 ```env
 TRILENS_OPEN_FLAMINGO_ENABLED=true
@@ -318,30 +318,30 @@ TRILENS_OPEN_FLAMINGO_DEVICE=cpu
 
 ---
 
-## Applicatie starten
+## Running the application
 
 ### FastAPI
 
-Start vanuit de projectroot:
+Start from the project root:
 
 ```bash
 source .venv/bin/activate
 uvicorn app.api.main:app --reload
 ```
 
-De API is beschikbaar op:
+The API is available at:
 
 ```text
 http://127.0.0.1:8000
 ```
 
-Interactieve API-documentatie:
+Interactive API documentation:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-Healthcheck:
+Health check:
 
 ```text
 GET http://127.0.0.1:8000/api/health
@@ -349,7 +349,7 @@ GET http://127.0.0.1:8000/api/health
 
 ### Next.js
 
-Start in een tweede terminal:
+Start in a second terminal:
 
 ```bash
 cd frontend
@@ -362,31 +362,31 @@ Open:
 http://localhost:3000
 ```
 
-### Streamlit-prototype
+### Streamlit prototype
 
-De oorspronkelijke prototype-interface blijft beschikbaar:
+The original prototype interface remains available:
 
 ```bash
 streamlit run streamlit_app.py
 ```
 
-De Next.js-interface is de primaire portfoliofrontend.
+The Next.js interface is the primary portfolio frontend.
 
 ---
 
-## API-endpoints
+## API endpoints
 
-| Methode | Endpoint                                | Beschrijving                         |
-| ------- | --------------------------------------- | ------------------------------------ |
-| `GET`   | `/api/health`                           | Controleert de API-status            |
-| `POST`  | `/api/documents`                        | Uploadt en indexeert een document    |
-| `POST`  | `/api/search`                           | Zoekt documenten                     |
-| `GET`   | `/api/documents/{document_id}/image`    | Retourneert de documentafbeelding    |
-| `POST`  | `/api/documents/{document_id}/analysis` | Analyseert een geselecteerd document |
+| Method | Endpoint                                | Description                    |
+| ------ | --------------------------------------- | ------------------------------ |
+| `GET`  | `/api/health`                           | Checks the API status          |
+| `POST` | `/api/documents`                        | Uploads and indexes a document |
+| `POST` | `/api/search`                           | Searches documents             |
+| `GET`  | `/api/documents/{document_id}/image`    | Returns the document image     |
+| `POST` | `/api/documents/{document_id}/analysis` | Analyses a selected document   |
 
 ---
 
-## Voorbeeld: zoeken
+## Example: search
 
 Request:
 
@@ -399,7 +399,7 @@ Request:
 }
 ```
 
-Vereenvoudigde response:
+Simplified response:
 
 ```json
 {
@@ -424,32 +424,32 @@ Vereenvoudigde response:
 
 ## Dataset
 
-De huidige demonstratiedataset bevat synthetische, publieke en afgeleide documentafbeeldingen.
+The current demonstration dataset contains synthetic, public and derived document images.
 
-Documentcategorieën omvatten onder andere:
+Document categories include:
 
-- facturen;
+- invoices;
 - purchase orders;
-- kassabonnen;
+- receipts;
 - delivery notes;
-- aanvraagformulieren;
-- fictieve identiteitskaarten.
+- application forms;
+- fictitious identity cards.
 
-De dataset is klein en bedoeld voor architectuur- en functionaliteitsdemonstratie. Ze vormt geen representatieve productiebenchmark.
+The dataset is small and intended for architecture and functionality demonstration. It does not constitute a representative production benchmark.
 
-Gebruik geen echte identiteitsdocumenten, klantdocumenten of documenten met persoonsgegevens.
+Do not use real identity documents, customer documents or documents containing personal data.
 
 ---
 
 ## Tests
 
-Voer alle Python-tests uit:
+Run all Python tests:
 
 ```bash
 python -m pytest
 ```
 
-Voer de frontendcontroles uit:
+Run the frontend checks:
 
 ```bash
 cd frontend
@@ -457,125 +457,125 @@ npm run lint
 npm run build
 ```
 
-De testset bevat onder andere tests voor:
+The test suite includes tests for:
 
-- afbeeldingsvalidatie;
+- image validation;
 - preprocessing;
 - checksums;
 - repositories;
 - cosine similarity;
 - ranking;
-- CLIP-service-integratie;
-- BLIP-captioning;
-- OpenFlamingo-fallback;
+- CLIP service integration;
+- BLIP captioning;
+- OpenFlamingo fallback;
 - application pipeline;
-- FastAPI-endpoints.
+- FastAPI endpoints.
 
-Modelafhankelijke tests gebruiken mocks waar mogelijk. CI hoort geen grote modelcheckpoints te downloaden.
+Model-dependent tests use mocks where possible. CI should not download large model checkpoints.
 
 ---
 
 ## Privacy
 
-TriLens is ontworpen als lokaal portfolio- en onderzoeksproject.
+TriLens is designed as a local portfolio and research project.
 
-Belangrijke beperkingen:
+Important limitations:
 
-- gebruik alleen synthetische, publieke of correct geanonimiseerde data;
-- commit geen persoonsgegevens;
-- commit geen echte identiteitsdocumenten;
-- uploads worden lokaal verwerkt;
-- de applicatie uploadt documenten niet automatisch naar een externe dienst;
-- logging hoort geen afbeeldingsinhoud of gevoelige documenttekst te bevatten;
-- modeloutput kan onjuist of verzonnen zijn;
-- resultaten zijn geen juridisch, financieel of identiteitsadvies.
+- use only synthetic, public or properly anonymised data;
+- do not commit personal data;
+- do not commit real identity documents;
+- uploads are processed locally;
+- the application does not automatically upload documents to an external service;
+- logging should not contain image content or sensitive document text;
+- model output may be incorrect or hallucinated;
+- results are not legal, financial or identity advice.
 
-Controleer altijd de licentievoorwaarden van externe datasets voordat afbeeldingen worden gepubliceerd of herverdeeld.
-
----
-
-## Bekende beperkingen
-
-- De dataset is klein.
-- Er is nog geen formele retrievalbenchmark.
-- CLIP leest geen exacte documenttekst zoals een OCR-engine.
-- Retrievalkwaliteit verschilt per documentcategorie en queryformulering.
-- BLIP-captions zijn algemeen en missen soms kleine documentdetails.
-- OpenFlamingo kan hallucineren of repetitieve output genereren.
-- OpenFlamingo is langzaam op CPU.
-- De huidige OpenFlamingo-configuratie kan een GPU met 8 GB geheugen overschrijden.
-- Er is geen authenticatie of gebruikersbeheer.
-- Er is geen rate limiting.
-- Verwerking gebeurt synchroon.
-- Alleen documentafbeeldingen worden ondersteund.
-- Het systeem is niet bedoeld voor productiegebruik.
+Always check the licence terms of external datasets before publishing or redistributing images.
 
 ---
 
-## Evaluatie
+## Known limitations
 
-Een formele retrievalbenchmark maakt nog geen deel uit van de eerste MVP.
+- The dataset is small.
+- There is no formal retrieval benchmark yet.
+- CLIP does not read exact document text like an OCR engine.
+- Retrieval quality varies by document category and query phrasing.
+- BLIP captions are general and sometimes miss small document details.
+- OpenFlamingo can hallucinate or generate repetitive output.
+- OpenFlamingo is slow on CPU.
+- The current OpenFlamingo configuration may exceed a GPU with 8 GB of memory.
+- There is no authentication or user management.
+- There is no rate limiting.
+- Processing is synchronous.
+- Only document images are supported.
+- The system is not intended for production use.
 
-Een toekomstige evaluatie zal een vaste dataset en minimaal tien handmatig gelabelde queries gebruiken, met onder andere:
+---
+
+## Evaluation
+
+A formal retrieval benchmark is not yet part of the first MVP.
+
+A future evaluation will use a fixed dataset and at least ten manually labelled queries, including:
 
 - Recall@1;
 - Recall@3;
-- gemiddelde querytijd;
-- gemiddelde indexeringstijd;
-- inhoudelijke foutanalyse.
+- average query time;
+- average indexing time;
+- qualitative error analysis.
 
-De huidige dataset is primair bedoeld om de end-to-end-architectuur te demonstreren.
+The current dataset is primarily intended to demonstrate the end-to-end architecture.
 
 ---
 
 ## Roadmap
 
-### Eerstvolgende kwaliteitsfase
+### Next quality phase
 
-- aanvullende veilige documentdatasets onderzoeken;
-- retrievalkwaliteit evalueren;
-- modellen vergelijken en actualiseren;
-- latency en geheugengebruik verbeteren;
-- OpenFlamingo-prompts en checkpoints onderzoeken;
-- CLIP- en captionreranking verfijnen.
+- research additional safe document datasets;
+- evaluate retrieval quality;
+- compare and update models;
+- improve latency and memory usage;
+- research OpenFlamingo prompts and checkpoints;
+- refine CLIP and caption reranking.
 
-### Mogelijke latere uitbreidingen
+### Possible later extensions
 
-- automatische documentclassificatie;
-- OCR en hybride text-image retrieval;
-- ondersteuning voor PDF- en Office-documenten;
-- documenten met meerdere pagina’s;
-- asynchrone indexering;
-- batchuploads;
-- Docker en persistente modelcachevolumes;
-- uitgebreidere observability;
-- productie-authenticatie en rate limiting.
+- automatic document classification;
+- OCR and hybrid text-image retrieval;
+- support for PDF and Office documents;
+- multi-page documents;
+- asynchronous indexing;
+- batch uploads;
+- Docker and persistent model cache volumes;
+- extended observability;
+- production authentication and rate limiting.
 
 ---
 
-## Technische keuzes
+## Technical decisions
 
-### Waarom lokale opslag?
+### Why local storage?
 
-SQLite en NumPy houden de MVP:
+SQLite and NumPy keep the MVP:
 
-- eenvoudig;
-- inspecteerbaar;
-- lokaal;
-- reproduceerbaar;
-- vrij van externe infrastructuur.
+- simple;
+- inspectable;
+- local;
+- reproducible;
+- free of external infrastructure.
 
-### Waarom een application pipeline?
+### Why an application pipeline?
 
-`DocumentIntelligencePipeline` orkestreert de gespecialiseerde services zonder model-, opslag- of UI-logica te dupliceren.
+`DocumentIntelligencePipeline` orchestrates the specialised services without duplicating model, storage or UI logic.
 
-Hierdoor gebruiken FastAPI en Streamlit dezelfde kernfunctionaliteit.
+This allows FastAPI and Streamlit to use the same core functionality.
 
-### Waarom twee frontends?
+### Why two frontends?
 
-Streamlit werd gebruikt om de ML-flow snel te valideren.
+Streamlit was used to quickly validate the ML flow.
 
-Daarna werd een gescheiden FastAPI- en Next.js-architectuur toegevoegd om een realistischer applicatieontwerp te demonstreren.
+A separate FastAPI and Next.js architecture was then added to demonstrate a more realistic application design.
 
 ---
 
@@ -583,48 +583,48 @@ Daarna werd een gescheiden FastAPI- en Next.js-architectuur toegevoegd om een re
 
 **MVP 1**
 
-Werkend:
+Working:
 
-- documentupload;
+- document upload;
 - preprocessing;
-- CLIP-indexering;
-- BLIP-captioning;
-- semantische retrieval;
-- hybride ranking;
-- optionele OpenFlamingo-analyse;
-- captionfallback;
-- lokale opslag;
+- CLIP indexing;
+- BLIP captioning;
+- semantic retrieval;
+- hybrid ranking;
+- optional OpenFlamingo analysis;
+- caption fallback;
+- local storage;
 - FastAPI;
-- Next.js-dashboard;
-- Streamlit-prototype;
-- geautomatiseerde tests.
+- Next.js dashboard;
+- Streamlit prototype;
+- automated tests.
 
-Gepland na MVP 1:
+Planned after MVP 1:
 
-- formele evaluatie;
-- aanvullende datasets;
-- modelkwaliteitsverbetering;
-- performanceoptimalisatie;
-- automatische classificatie;
-- ondersteuning voor andere documentformaten;
-- aanvullen met ocr-enigne om documenten inhoudeljk te analyzeren.
+- formal evaluation;
+- additional datasets;
+- model quality improvement;
+- performance optimisation;
+- automatic classification;
+- support for other document formats;
+- OCR engine integration for content-based document analysis.
 
 ---
 
-## Licentie
+## Licence
 
-De eigen broncode en projectdocumentatie van TriLens Document Intelligence worden beschikbaar gesteld onder de MIT License.
+The original source code and project documentation of TriLens Document Intelligence are made available under the MIT License.
 
-Zie [LICENSE](LICENSE) voor de volledige licentietekst.
+See [LICENSE](LICENSE) for the full licence text.
 
-Deze licentie geldt niet automatisch voor:
+This licence does not automatically apply to:
 
-- externe modelweights;
-- externe datasets;
-- afbeeldingen uit externe datasets;
-- softwaredependencies;
-- code of assets van derden.
+- external model weights;
+- external datasets;
+- images from external datasets;
+- software dependencies;
+- third-party code or assets.
 
-CLIP-, BLIP- en OpenFlamingo-modellen en hun checkpoints behouden hun eigen licentievoorwaarden. Hetzelfde geldt voor Hugging Face-datasets en andere publieke databronnen.
+CLIP, BLIP and OpenFlamingo models and their checkpoints retain their own licence terms. The same applies to Hugging Face datasets and other public data sources.
 
-Gebruikers en bijdragers zijn zelf verantwoordelijk voor het controleren van de toepasselijke model-, dataset- en dependencylicenties voordat zij bestanden herverdelen, publiceren of commercieel gebruiken.
+Users and contributors are responsible for checking the applicable model, dataset and dependency licences before redistributing, publishing or commercially using any files.
