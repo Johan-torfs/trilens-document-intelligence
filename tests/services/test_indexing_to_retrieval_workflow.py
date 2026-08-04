@@ -23,6 +23,10 @@ class FakeRetrievalStrategy(RetrievalStrategy):
 
         return np.array([0.0, 1.0], dtype=np.float32)
 
+    @staticmethod
+    def calibrate_score(raw: float) -> float:
+        return raw
+
     def embed_text(self, text: str) -> np.ndarray:
         if "invoice" in text.lower():
             return np.array([1.0, 0.0], dtype=np.float32)

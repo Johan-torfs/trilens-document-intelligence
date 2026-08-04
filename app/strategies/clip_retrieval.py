@@ -66,3 +66,15 @@ class ClipRetrievalStrategy(RetrievalStrategy):
         normalized = features / norm
 
         return normalized.cpu().numpy().astype(np.float32)
+
+    @staticmethod
+    def calibrate_score(raw: float) -> float:
+        """Map a raw CLIP cosine similarity to a 0-1 calibrated range.
+
+        Thresholds are placeholders - replace with benchmark-derived values
+        after running the labelled evaluation set.
+        """
+        _noise_floor = 0.15
+        _ceiling = 0.35
+        calibrated = (raw - _noise_floor) / (_ceiling - _noise_floor)
+        return max(0.0, min(1.0, calibrated))

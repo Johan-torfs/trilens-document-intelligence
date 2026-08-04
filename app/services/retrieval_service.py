@@ -21,6 +21,9 @@ class RetrievalService:
     def model_name(self) -> str:
         return self._strategy.model_name
 
+    def calibrate_score(self, raw: float) -> float:
+        return self._strategy.calibrate_score(raw)
+
     def search(
         self,
         query: str,

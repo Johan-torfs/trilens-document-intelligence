@@ -40,6 +40,7 @@ export type SearchResult = {
   clip_score: number;
   caption_score: number;
   metadata_score: number;
+  calibrated_score: number;
 
   caption: string | null;
   image_url: string;

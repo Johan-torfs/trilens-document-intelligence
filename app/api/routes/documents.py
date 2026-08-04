@@ -14,9 +14,7 @@ from app.api.dependencies import (
     PipelineDependency,
     RUNTIME_DIR,
 )
-from app.services.document_factory import (
-    create_document_from_bytes,
-)
+from app.domain.prepared_document import DocumentSource
 from app.services.document_intelligence_pipeline import (
     IndexDocumentOutcome,
 )
@@ -29,8 +27,6 @@ router = APIRouter(
     prefix="/api/documents",
     tags=["documents"],
 )
-
-UPLOAD_DIR = RUNTIME_DIR / "uploads"
 
 
 class IndexDocumentResponse(BaseModel):
@@ -66,12 +62,21 @@ def index_document(
     try:
         file_bytes = file.file.read()
 
-        document, image_path = create_document_from_bytes(
+        if not file_bytes:
+            raise ValueError("Het geüploade bestand is leeg.")
+
+        cleaned_document_type = document_type.strip()
+
+        if not cleaned_document_type:
+            raise ValueError(
+                "Het documenttype mag niet leeg zijn."
+            )
+
+        source = DocumentSource(
             filename=file.filename or "document",
-            content_type=file.content_type,
-            file_bytes=file_bytes,
-            document_type=document_type,
-            upload_dir=UPLOAD_DIR,
+            mime_type=file.content_type
+            or "application/octet-stream",
+            content=file_bytes,
         )
 
     except ValueError as error:
@@ -82,14 +87,14 @@ def index_document(
 
     try:
         outcome = pipeline.index_document(
-            document=document,
-            image_path=image_path,
+            source=source,
+            document_type=cleaned_document_type,
         )
 
     except Exception as error:
         logger.exception(
             "Documentverwerking mislukt voor %s",
-            document.id,
+            file.filename,
         )
 
         raise HTTPException(

@@ -20,11 +20,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 RUNTIME_DIR = PROJECT_ROOT / "data" / "runtime"
 DATABASE_PATH = RUNTIME_DIR / "trilens.sqlite3"
 VECTOR_DIR = RUNTIME_DIR / "vectors"
+UPLOAD_DIR = RUNTIME_DIR / "uploads"
 
 
 @lru_cache(maxsize=1)
 def get_pipeline() -> DocumentIntelligencePipeline:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     VECTOR_DIR.mkdir(parents=True, exist_ok=True)
 
     document_repository = SQLiteDocumentRepository(
@@ -51,6 +53,7 @@ def get_pipeline() -> DocumentIntelligencePipeline:
     return create_document_intelligence_pipeline(
         document_repository=document_repository,
         vector_repository=vector_repository,
+        upload_dir=UPLOAD_DIR,
         open_flamingo_enabled=open_flamingo_enabled,
         open_flamingo_device=open_flamingo_device,
     )

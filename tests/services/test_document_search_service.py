@@ -28,6 +28,10 @@ class FakeRetrievalStrategy(RetrievalStrategy):
     def embed_text(self, text: str) -> np.ndarray:
         return np.array([1.0, 0.0], dtype=np.float32)
 
+    @staticmethod
+    def calibrate_score(raw: float) -> float:
+        return raw
+
 
 def test_search_returns_enriched_document_result(
     vector_repository: VectorRepository,

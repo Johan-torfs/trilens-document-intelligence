@@ -1,42 +1,43 @@
 from pathlib import Path
+import shutil
 
 from datasets import load_dataset
 
 
-def collect_cord_samples(
-    output_dir: Path,
-    count: int = 10,
-) -> list[dict]:
-    output_dir.mkdir(parents=True, exist_ok=True)
+DATASET_ID = "naver-clova-ix/cord-v2"
+REVISION = "7f0115a4b758a71d6473b8d085751692da2fef98"
+OUTPUT_DIR = Path("data/external/cord")
+COUNT = 10
+
+
+def download_cord() -> None:
+    shutil.rmtree(OUTPUT_DIR, ignore_errors=True)
+    OUTPUT_DIR.mkdir(parents=True)
 
     dataset = load_dataset(
-        "naver-clova-ix/cord-v2",
-        split="train",
+        DATASET_ID,
+        split="test",
         streaming=True,
+        revision=REVISION,
     )
 
-    records = []
+    saved = 0
 
-    for index, example in enumerate(dataset):
-        if index >= count:
+    for row in dataset:
+        saved += 1
+        path = OUTPUT_DIR / f"cord_{saved:03d}.png"
+
+        row["image"].convert("RGB").save(path)
+        print(path)
+
+        if saved == COUNT:
             break
 
-        document_id = f"cord_{index + 1:03d}"
-        output_path = output_dir / f"{document_id}.png"
-
-        image = example["image"].convert("RGB")
-        image.save(output_path)
-
-        records.append(
-            {
-                "id": document_id,
-                "path": output_path.as_posix(),
-                "source": "cord-v2",
-                "document_type": "receipt",
-                "contains_table": True,
-                "safe_for_public_repo": False,
-                "license": "CC-BY-4.0",
-            }
+    if saved != COUNT:
+        raise RuntimeError(
+            f"Expected {COUNT} CORD images, got {saved}."
         )
 
-    return records
+
+if __name__ == "__main__":
+    download_cord()

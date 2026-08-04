@@ -6,13 +6,13 @@ from PIL import Image
 
 from app.api.dependencies import get_pipeline
 from app.api.main import create_app
-from app.api.routes import documents as documents_route
 from app.domain.document import (
     ArtifactType,
     ModelArtifact,
     DocumentMetadata,
     DocumentRecord,
 )
+from app.domain.prepared_document import DocumentSource
 from app.services.document_intelligence_pipeline import (
     IndexDocumentOutcome,
 )
@@ -40,9 +40,23 @@ def test_upload_indexes_document(
     pipeline = MagicMock()
 
     def fake_index_document(
-        document,
-        image_path,
+        source: DocumentSource,
+        document_type: str,
     ) -> IndexDocumentOutcome:
+        document = DocumentRecord(
+            id="document-1",
+            original_filename=source.filename,
+            stored_path=str(tmp_path / source.filename),
+            checksum="checksum-1",
+            width=200,
+            height=300,
+            mime_type=source.mime_type,
+            document_type=document_type,
+            metadata=DocumentMetadata(
+                document_type=document_type,
+            ),
+        )
+
         embedding = ModelArtifact(
             id="embedding-1",
             document_id=document.id,
@@ -62,24 +76,28 @@ def test_upload_indexes_document(
             content="an invoice document",
         )
 
+        ocr = ModelArtifact(
+            id="ocr-1",
+            document_id=document.id,
+            artifact_type=ArtifactType.OCR,
+            model_name="fake-doctr",
+            content="Invoice text",
+        )
+
         return IndexDocumentOutcome(
             document=document,
             embedding_artifact=embedding,
             caption_artifact=caption,
             embedding_error=None,
             caption_error=None,
+            ocr_artifact=ocr,
+            ocr_error=None,
             reused_document=False,
             duration_ms=125.0,
         )
 
     pipeline.index_document.side_effect = (
         fake_index_document
-    )
-
-    monkeypatch.setattr(
-        documents_route,
-        "UPLOAD_DIR",
-        tmp_path,
     )
 
     app = create_app()

@@ -68,6 +68,29 @@ class SQLiteDocumentRepository(DocumentRepository):
                 """
             )
 
+        # Migration: add page_count column (schema version 2)
+        with sqlite3.connect(self.database_path) as connection:
+            version_row = connection.execute(
+                "SELECT MAX(version) FROM schema_version"
+            ).fetchone()
+
+            current_version = version_row[0] or 1
+
+            if current_version < 2:
+                try:
+                    connection.execute(
+                        "ALTER TABLE documents "
+                        "ADD COLUMN page_count INTEGER "
+                        "NOT NULL DEFAULT 1"
+                    )
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
+
+                connection.execute(
+                    "INSERT OR REPLACE INTO schema_version "
+                    "(version) VALUES (2)"
+                )
+
     def save_document(self, document: DocumentRecord) -> None:
         existing = self.get_document_by_checksum(document.checksum)
 
@@ -95,9 +118,10 @@ class SQLiteDocumentRepository(DocumentRepository):
                     metadata_json,
                     created_at,
                     processing_status,
-                    processing_error
+                    processing_error,
+                    page_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     document.id,
@@ -116,6 +140,7 @@ class SQLiteDocumentRepository(DocumentRepository):
                     document.created_at.isoformat(),
                     document.processing_status.value,
                     document.processing_error,
+                    document.page_count,
                 ),
             )
 
@@ -141,6 +166,7 @@ class SQLiteDocumentRepository(DocumentRepository):
                 row["processing_status"]
             ),
             processing_error=row["processing_error"],
+            page_count=row["page_count"] if row["page_count"] is not None else 1,
         )
 
     def _row_to_artifact(self, row: sqlite3.Row) -> ModelArtifact:

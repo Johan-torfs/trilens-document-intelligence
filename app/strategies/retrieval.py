@@ -17,3 +17,8 @@ class RetrievalStrategy(ABC):
     @abstractmethod
     def embed_text(self, text: str) -> np.ndarray:
         ...
+
+    @staticmethod
+    @abstractmethod
+    def calibrate_score(raw: float) -> float:
+        ...

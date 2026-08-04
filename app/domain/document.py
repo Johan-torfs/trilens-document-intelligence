@@ -32,6 +32,8 @@ class DocumentRecord(BaseModel):
     mime_type: str
     document_type: str
 
+    page_count: int = Field(default=1, gt=0)
+
     caption: str | None = None
     retrieval_model: str | None = None
     caption_model: str | None = None
@@ -51,6 +53,7 @@ class ArtifactType(StrEnum):
     TEXT_EMBEDDING = "text_embedding"
     CAPTION = "caption"
     ANALYSIS = "analysis"
+    OCR = "ocr"
 
 
 class ModelArtifact(BaseModel):

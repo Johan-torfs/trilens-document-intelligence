@@ -29,6 +29,7 @@ def test_search_returns_hybrid_results() -> None:
                 clip_score=0.80,
                 caption_score=1.0,
                 metadata_score=1.0,
+                calibrated_score=0.75,
                 caption="an invoice with product rows",
                 stored_path="data/runtime/uploads/invoice.png",
                 document_type="invoice",
@@ -40,6 +41,7 @@ def test_search_returns_hybrid_results() -> None:
                 clip_score=0.90,
                 caption_score=0.0,
                 metadata_score=0.0,
+                calibrated_score=0.42,
                 caption="a landscape photograph",
                 stored_path="data/runtime/uploads/other.png",
                 document_type="receipt",
@@ -83,6 +85,7 @@ def test_search_returns_hybrid_results() -> None:
         "clip_score": 0.80,
         "caption_score": 1.0,
         "metadata_score": 1.0,
+        "calibrated_score": 0.75,
         "caption": "an invoice with product rows",
         "image_url": (
             "/api/documents/document-1/image"

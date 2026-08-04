@@ -21,6 +21,10 @@ class FakeRetrievalStrategy(RetrievalStrategy):
 
         return np.array([0.0, 1.0], dtype=np.float32)
 
+    @staticmethod
+    def calibrate_score(raw: float) -> float:
+        return raw
+
 
 @pytest.fixture
 def service(

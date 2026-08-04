@@ -10,3 +10,7 @@ def calculate_checksum(file_path: Path) -> str:
             digest.update(chunk)
 
     return digest.hexdigest()
+
+
+def calculate_checksum_bytes(data: bytes) -> str:
+    return sha256(data).hexdigest()

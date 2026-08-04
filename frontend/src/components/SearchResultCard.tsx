@@ -32,7 +32,7 @@ export function SearchResultCard({
       <div className="grid lg:grid-cols-[300px_1fr]">
         {/* Document preview */}
         <div className="relative flex min-h-72 items-center justify-center bg-slate-100 p-5">
-          <span className="absolute left-3 top-3 rounded-full bg-slate-900/75 px-2.5 py-1 font-mono text-xs font-medium text-white backdrop-blur-sm">
+          <span className="absolute z-10 left-3 top-3 rounded-full bg-slate-900/75 px-2.5 py-1 font-mono text-xs font-medium text-white backdrop-blur-sm">
             #{result.rank}
           </span>
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -56,7 +56,7 @@ export function SearchResultCard({
               </p>
             </div>
             <span className="shrink-0 rounded-full bg-slate-900 px-3 py-1 font-mono text-sm font-semibold text-white">
-              {result.final_score.toFixed(3)}
+              {Math.round(result.calibrated_score * 100)}%
             </span>
           </div>
 
@@ -74,7 +74,7 @@ export function SearchResultCard({
           {/* Score grid */}
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Score label="Final" value={result.final_score} />
-            <Score label="CLIP" value={result.clip_score} />
+            <Score label="Match" value={result.calibrated_score} />
             <Score label="Caption" value={result.caption_score} />
             <Score label="Metadata" value={result.metadata_score} />
           </div>

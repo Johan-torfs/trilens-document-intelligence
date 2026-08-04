@@ -38,6 +38,7 @@ class SearchResultResponse(BaseModel):
     clip_score: float
     caption_score: float
     metadata_score: float
+    calibrated_score: float
 
     caption: str | None
     image_url: str
@@ -123,6 +124,7 @@ def _to_result_response(
         clip_score=result.clip_score,
         caption_score=result.caption_score,
         metadata_score=result.metadata_score,
+        calibrated_score=result.calibrated_score,
         caption=result.caption,
         image_url=(
             f"/api/documents/{result.document_id}/image"

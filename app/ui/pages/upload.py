@@ -1,17 +1,10 @@
-from pathlib import Path
-
 import streamlit as st
 
+from app.domain.prepared_document import DocumentSource
 from app.ui.dependencies import (
-    PROJECT_ROOT,
     get_pipeline,
 )
-from app.ui.upload_helpers import (
-    create_document_from_upload,
-)
 
-
-UPLOAD_DIR = PROJECT_ROOT / "data" / "runtime" / "uploads"
 
 DOCUMENT_TYPES = {
     "Invoice": "invoice",
@@ -53,12 +46,11 @@ if submitted:
         st.stop()
 
     try:
-        document, image_path = create_document_from_upload(
-            uploaded_file=uploaded_file,
-            document_type=DOCUMENT_TYPES[
-                selected_type_label
-            ],
-            upload_dir=UPLOAD_DIR,
+        source = DocumentSource(
+            filename=uploaded_file.name,
+            mime_type=uploaded_file.type
+            or "application/octet-stream",
+            content=uploaded_file.getvalue(),
         )
 
         pipeline = get_pipeline()
@@ -67,8 +59,10 @@ if submitted:
             "Document preprocessen, indexeren en captionen..."
         ):
             outcome = pipeline.index_document(
-                document=document,
-                image_path=Path(image_path),
+                source=source,
+                document_type=DOCUMENT_TYPES[
+                    selected_type_label
+                ],
             )
 
     except Exception as error:

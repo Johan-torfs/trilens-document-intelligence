@@ -424,20 +424,51 @@ Simplified response:
 
 ## Dataset
 
-The current demonstration dataset contains synthetic, public and derived document images.
+TriLens uses a small external document dataset for local development and model comparison.
 
-Document categories include:
+The dataset contains:
 
-- invoices;
-- purchase orders;
-- receipts;
-- delivery notes;
-- application forms;
-- fictitious identity cards.
+- 10 CORD receipt images;
+- 10 FUNSD scanned forms;
+- 30 DocLayNet pages:
+  - financial reports;
+  - scientific articles;
+  - laws and regulations;
+  - government tenders;
+  - manuals;
+  - patents.
 
-The dataset is small and intended for architecture and functionality demonstration. It does not constitute a representative production benchmark.
+External images are not committed to Git.
 
-Do not use real identity documents, customer documents or documents containing personal data.
+To rebuild the dataset:
+
+1. Download the FUNSD archive from:
+
+   ```text
+   https://guillaumejaume.github.io/FUNSD/download
+   ```
+
+2. Save it locally, for example as `~/Downloads/dataset.zip`.
+
+3. Run:
+
+   ```bash
+   python -m scripts.dataset.fetch_external_datasets \
+     --funsd-archive ~/Downloads/dataset.zip
+   ```
+
+CORD and DocLayNet are fetched automatically by the script.
+
+The resulting files are stored under:
+
+```text
+data/external/
+├── cord/
+├── funsd/
+└── doclaynet/
+```
+
+Dataset-specific licences and usage terms remain applicable.
 
 ---
 
