@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from app.domain.classification import DocumentTypeCandidate
 from app.repositories.document_repository import DocumentRepository
 from app.repositories.vector_repository import VectorRepository
 from app.services.analysis_service import AnalysisService
@@ -9,6 +10,7 @@ from app.services.document_classification_service import (
 from app.services.document_intelligence_pipeline import (
     DocumentIntelligencePipeline,
 )
+from app.services.document_ocr_service import DocumentOCRService
 from app.services.document_preparation_service import (
     DocumentPreparationService,
 )
@@ -19,16 +21,6 @@ from app.services.indexing_service import IndexingService
 from app.services.retrieval_service import RetrievalService
 from app.services.score_calibration import LinearScoreCalibrator
 from app.services.text_indexing_service import TextIndexingService
-from app.strategies.image_document import ImageDocumentStrategy
-from app.strategies.sentence_embedding import SentenceEmbeddingStrategy
-from app.strategies.pdf_document import PDFDocumentStrategy
-from app.strategies.siglip_embedding import SiglipEmbeddingStrategy
-from app.strategies.open_flamingo_analysis import (
-    OpenFlamingoAnalysisStrategy,
-)
-from app.services.document_ocr_service import DocumentOCRService
-from app.strategies.doctr_ocr import DocTROCRStrategy
-from app.domain.classification import DocumentTypeCandidate
 
 
 DOCUMENT_TYPE_CANDIDATES: list[DocumentTypeCandidate] = [
@@ -126,6 +118,14 @@ def create_document_intelligence_pipeline(
     open_flamingo_enabled: bool = False,
     open_flamingo_device: str | None = "cpu",
 ) -> DocumentIntelligencePipeline:
+    # Deferred: these imports load torch / doctr / sentence-transformers
+    from app.strategies.doctr_ocr import DocTROCRStrategy
+    from app.strategies.image_document import ImageDocumentStrategy
+    from app.strategies.open_flamingo_analysis import OpenFlamingoAnalysisStrategy
+    from app.strategies.pdf_document import PDFDocumentStrategy
+    from app.strategies.sentence_embedding import SentenceEmbeddingStrategy
+    from app.strategies.siglip_embedding import SiglipEmbeddingStrategy
+
     preparation_service = DocumentPreparationService(
         strategies=[
             ImageDocumentStrategy(),
