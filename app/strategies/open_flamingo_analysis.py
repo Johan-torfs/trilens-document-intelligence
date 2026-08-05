@@ -74,7 +74,7 @@ class OpenFlamingoAnalysisStrategy(AnalysisStrategy):
         except torch.cuda.OutOfMemoryError as error:
             message = (
                 "Onvoldoende GPU-geheugen om OpenFlamingo te laden. "
-                "De captionfallback wordt gebruikt."
+                "OpenFlamingo is niet beschikbaar."
             )
 
             self._mark_unavailable(message)

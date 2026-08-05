@@ -8,7 +8,7 @@ import torch
 from PIL import Image
 
 from app.services.similarity import cosine_similarity
-from app.strategies.clip_retrieval import ClipRetrievalStrategy
+from app.strategies.clip_embedding import ClipEmbeddingStrategy
 from scripts.optimizations.compare_clip_models import (
     SiglipRetrievalStrategy,
 )
@@ -119,7 +119,7 @@ def benchmark(name: str, strategy) -> None:
 def main() -> None:
     benchmark(
         "CLIP",
-        ClipRetrievalStrategy(),
+        ClipEmbeddingStrategy(),
     )
 
     if torch.cuda.is_available():

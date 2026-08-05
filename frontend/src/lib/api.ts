@@ -11,17 +11,14 @@ export type IndexDocumentResponse = {
   original_filename: string;
 
   is_searchable: boolean;
-  has_caption: boolean;
+  has_ocr: boolean;
   fully_succeeded: boolean;
   reused_document: boolean;
 
-  caption: string | null;
-  embedding_model: string | null;
-  caption_model: string | null;
+  indexing_error: string | null;
+  ocr_error: string | null;
 
-  embedding_error: string | null;
-  caption_error: string | null;
-
+  classification_confidence: number | null;
   duration_ms: number;
 };
 
@@ -29,7 +26,6 @@ export type SearchRequest = {
   query: string;
   top_k: number;
   document_type?: string | null;
-  use_hybrid_ranking: boolean;
 };
 
 export type SearchResult = {
@@ -37,12 +33,10 @@ export type SearchResult = {
   rank: number;
 
   final_score: number;
-  clip_score: number;
-  caption_score: number;
-  metadata_score: number;
-  calibrated_score: number;
+  visual_score: number;
+  text_score: number;
+  fts_score: number;
 
-  caption: string | null;
   image_url: string;
   document_type: string;
 };
@@ -60,9 +54,6 @@ export type AnalysisResponse = {
   document_id: string;
   question: string;
   text: string;
-
-  source: string;
-  used_fallback: boolean;
 
   model_name: string;
   model_version: string | null;
@@ -120,7 +111,10 @@ export async function uploadDocument(
   const formData = new FormData();
 
   formData.append("file", file);
-  formData.append("document_type", documentType);
+
+  if (documentType) {
+    formData.append("document_type", documentType);
+  }
 
   const response = await fetch(getApiUrl("/api/documents"), {
     method: "POST",

@@ -1,184 +1,171 @@
-from pathlib import Path
-from unittest.mock import create_autospec
-from uuid import UUID
+from collections.abc import Sequence
+from unittest.mock import MagicMock, create_autospec
 
 import numpy as np
+import pytest
 from PIL import Image
 
-from app.domain.document import ArtifactType, ModelArtifact
-from app.repositories.document_repository import DocumentRepository
+from app.domain.document import DocumentRecord
+from app.domain.prepared_document import DocumentPage
 from app.repositories.vector_repository import VectorRepository
-from app.services.indexing_service import IndexingService
-from app.strategies.retrieval import RetrievalStrategy
+from app.services.indexing_service import (
+    DocumentIndexingError,
+    IndexingResult,
+    IndexingService,
+)
+from app.strategies.embedding import EmbeddingStrategy
 
 
-class FakeRetrievalStrategy(RetrievalStrategy):
+class FakeEmbeddingStrategy(EmbeddingStrategy):
     @property
     def model_name(self) -> str:
         return "fake-model"
 
-    def embed_image(self, image: Image.Image) -> np.ndarray:
-        return np.array([0.6, 0.8], dtype=np.float32)
+    @property
+    def model_version(self) -> str | None:
+        return "1.0"
+
+    def embed_images(
+        self,
+        images: Sequence[Image.Image],
+    ) -> np.ndarray:
+        return np.tile(
+            np.array([0.6, 0.8], dtype=np.float32),
+            (len(images), 1),
+        )
 
     def embed_text(self, text: str) -> np.ndarray:
         return np.array([1.0, 0.0], dtype=np.float32)
 
-    @staticmethod
-    def calibrate_score(raw: float) -> float:
-        return raw
 
-
-def test_index_image_stores_vector_and_returns_artifact(
-    vector_repository: VectorRepository,
-) -> None:
-    document_repository = create_autospec(
-        DocumentRepository,
-        instance=True,
-    )
-
-    service = IndexingService(
-        strategy=FakeRetrievalStrategy(),
-        vector_repository=vector_repository,
-        document_repository=document_repository,
-    )
-
-    artifact = service.index_image(
-        document_id="document-001",
-        image=Image.new("RGB", (100, 100), "white"),
-    )
-
-    stored_embedding = vector_repository.load(
-        artifact_id=artifact.id,
-    )
-
-    assert isinstance(artifact, ModelArtifact)
-    assert artifact.document_id == "document-001"
-    assert artifact.artifact_type == ArtifactType.IMAGE_EMBEDDING
-    assert artifact.model_name == "fake-model"
-    assert artifact.dimensions == 2
-    assert artifact.storage_path is not None
-    assert Path(artifact.storage_path).exists()
-
-    np.testing.assert_array_equal(
-        stored_embedding,
-        np.array([0.6, 0.8], dtype=np.float32),
-    )
-
-    document_repository.save_artifact.assert_called_once_with(
-        artifact
+def make_document(
+    document_id: str = "document-001",
+    page_count: int = 1,
+) -> DocumentRecord:
+    return DocumentRecord(
+        id=document_id,
+        original_filename="invoice.png",
+        stored_path="data/invoice.png",
+        checksum="checksum-1",
+        width=100,
+        height=100,
+        page_count=page_count,
+        mime_type="image/png",
+        document_type="invoice",
     )
 
 
-def test_index_image_generates_valid_artifact_id(
-    vector_repository: VectorRepository,
-) -> None:
-    document_repository = create_autospec(
-        DocumentRepository,
-        instance=True,
-    )
-
-    service = IndexingService(
-        strategy=FakeRetrievalStrategy(),
-        vector_repository=vector_repository,
-        document_repository=document_repository,
-    )
-
-    artifact = service.index_image(
-        document_id="document-001",
-        image=Image.new("RGB", (100, 100), "white"),
-    )
-
-    parsed_id = UUID(artifact.id)
-
-    assert str(parsed_id) == artifact.id
-
-
-def test_index_pages_single_image_delegates_to_index_image(
-    vector_repository: VectorRepository,
-) -> None:
-    document_repository = create_autospec(
-        DocumentRepository,
-        instance=True,
-    )
-
-    service = IndexingService(
-        strategy=FakeRetrievalStrategy(),
-        vector_repository=vector_repository,
-        document_repository=document_repository,
-    )
-
-    images = [Image.new("RGB", (100, 100), "white")]
-    artifact = service.index_pages(
-        document_id="document-001",
-        images=images,
-    )
-
-    stored_embedding = vector_repository.load(artifact.id)
-
-    assert artifact.artifact_type == ArtifactType.IMAGE_EMBEDDING
-    np.testing.assert_array_equal(
-        stored_embedding,
-        np.array([0.6, 0.8], dtype=np.float32),
-    )
-
-
-def test_index_pages_multi_page_combines_normalized_embeddings(
-    vector_repository: VectorRepository,
-) -> None:
-    call_count = 0
-
-    class TwoVectorStrategy(RetrievalStrategy):
-        """Returns different embeddings per call to simulate two pages."""
-
-        @property
-        def model_name(self) -> str:
-            return "fake-model"
-
-        def embed_image(
-            self, image: Image.Image
-        ) -> np.ndarray:
-            nonlocal call_count
-            call_count += 1
-
-            # page 1: [3, 4] -> normalized [0.6, 0.8]
-            # page 2: [0, 1] -> normalized [0, 1]
-            if call_count == 1:
-                return np.array([3.0, 4.0], dtype=np.float32)
-            return np.array([0.0, 1.0], dtype=np.float32)
-
-        def embed_text(self, text: str) -> np.ndarray:
-            return np.array([1.0, 0.0], dtype=np.float32)
-
-        @staticmethod
-        def calibrate_score(raw: float) -> float:
-            return raw
-
-    document_repository = create_autospec(
-        DocumentRepository,
-        instance=True,
-    )
-
-    service = IndexingService(
-        strategy=TwoVectorStrategy(),
-        vector_repository=vector_repository,
-        document_repository=document_repository,
-    )
-
-    images = [
-        Image.new("RGB", (100, 100), "white"),
-        Image.new("RGB", (100, 100), "gray"),
+def make_pages(
+    count: int = 1,
+) -> list[DocumentPage]:
+    return [
+        DocumentPage(
+            page_number=i,
+            image=Image.new("RGB", (100, 100), "white"),
+        )
+        for i in range(1, count + 1)
     ]
 
-    artifact = service.index_pages(
-        document_id="document-001",
-        images=images,
+
+def test_index_pages_returns_indexing_result(
+    mock_vector_repository: MagicMock,
+) -> None:
+    mock_vector_repository.count.side_effect = [0, 1]
+
+    service = IndexingService(
+        strategy=FakeEmbeddingStrategy(),
+        vector_repository=mock_vector_repository,
     )
 
-    stored = vector_repository.load(artifact.id)
+    document = make_document()
+    pages = make_pages(1)
 
-    # Mean of [0.6, 0.8] and [0, 1] -> [0.3, 0.9], then normalized
-    expected_raw = np.array([0.3, 0.9], dtype=np.float32)
-    expected_norm = expected_raw / np.linalg.norm(expected_raw)
+    result = service.index_pages(
+        document=document,
+        pages=pages,
+    )
 
-    assert artifact.dimensions == 2
-    np.testing.assert_array_almost_equal(stored, expected_norm)
+    assert isinstance(result, IndexingResult)
+    assert result.document_id == "document-001"
+    assert result.page_count == 1
+    assert result.dimensions == 2
+    assert result.model_name == "fake-model"
+    assert result.reused_existing is False
+
+    mock_vector_repository.save_batch.assert_called_once()
+
+
+def test_index_pages_multi_page(
+    mock_vector_repository: MagicMock,
+) -> None:
+    mock_vector_repository.count.side_effect = [0, 3]
+
+    service = IndexingService(
+        strategy=FakeEmbeddingStrategy(),
+        vector_repository=mock_vector_repository,
+    )
+
+    document = make_document(page_count=3)
+    pages = make_pages(3)
+
+    result = service.index_pages(
+        document=document,
+        pages=pages,
+    )
+
+    assert result.page_count == 3
+    saved_points = mock_vector_repository.save_batch.call_args.args[0]
+    assert len(saved_points) == 3
+    assert [p.payload["page_number"] for p in saved_points] == [1, 2, 3]
+
+
+def test_index_pages_returns_cached_when_already_indexed(
+    mock_vector_repository: MagicMock,
+) -> None:
+    mock_vector_repository.count.return_value = 1
+
+    service = IndexingService(
+        strategy=FakeEmbeddingStrategy(),
+        vector_repository=mock_vector_repository,
+    )
+
+    document = make_document()
+    pages = make_pages(1)
+
+    result = service.index_pages(
+        document=document,
+        pages=pages,
+    )
+
+    assert result.reused_existing is True
+    mock_vector_repository.save_batch.assert_not_called()
+
+
+def test_index_pages_rejects_empty_pages(
+    mock_vector_repository: MagicMock,
+) -> None:
+    service = IndexingService(
+        strategy=FakeEmbeddingStrategy(),
+        vector_repository=mock_vector_repository,
+    )
+
+    with pytest.raises(ValueError, match="At least one"):
+        service.index_pages(
+            document=make_document(),
+            pages=[],
+        )
+
+
+def test_index_pages_rejects_mismatched_page_count(
+    mock_vector_repository: MagicMock,
+) -> None:
+    service = IndexingService(
+        strategy=FakeEmbeddingStrategy(),
+        vector_repository=mock_vector_repository,
+    )
+
+    with pytest.raises(ValueError, match="expects 2 pages"):
+        service.index_pages(
+            document=make_document(page_count=2),
+            pages=make_pages(1),
+        )

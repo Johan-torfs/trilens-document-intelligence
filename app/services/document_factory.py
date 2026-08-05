@@ -5,10 +5,7 @@ from uuid import uuid4
 
 from PIL import Image
 
-from app.domain.document import (
-    DocumentMetadata,
-    DocumentRecord,
-)
+from app.domain.document import DocumentRecord
 
 
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg"}
@@ -67,11 +64,9 @@ def create_document_from_bytes(
         checksum=checksum,
         width=width,
         height=height,
+        page_count=1,
         mime_type=content_type or "application/octet-stream",
         document_type=cleaned_document_type,
-        metadata=DocumentMetadata(
-            document_type=cleaned_document_type,
-        ),
     )
 
     return document, stored_path

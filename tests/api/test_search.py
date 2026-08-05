@@ -26,11 +26,10 @@ def test_search_returns_hybrid_results() -> None:
                 document_id="document-1",
                 rank=1,
                 final_score=0.86,
-                clip_score=0.80,
-                caption_score=1.0,
-                metadata_score=1.0,
+                visual_score=0.80,
+                text_score=0.0,
+                fts_score=0.0,
                 calibrated_score=0.75,
-                caption="an invoice with product rows",
                 stored_path="data/runtime/uploads/invoice.png",
                 document_type="invoice",
             ),
@@ -38,11 +37,10 @@ def test_search_returns_hybrid_results() -> None:
                 document_id="document-2",
                 rank=2,
                 final_score=0.63,
-                clip_score=0.90,
-                caption_score=0.0,
-                metadata_score=0.0,
+                visual_score=0.90,
+                text_score=0.0,
+                fts_score=0.0,
                 calibrated_score=0.42,
-                caption="a landscape photograph",
                 stored_path="data/runtime/uploads/other.png",
                 document_type="receipt",
             ),
@@ -62,7 +60,6 @@ def test_search_returns_hybrid_results() -> None:
         json={
             "query": "invoice",
             "top_k": 2,
-            "use_hybrid_ranking": True,
         },
     )
 
@@ -82,11 +79,9 @@ def test_search_returns_hybrid_results() -> None:
         "document_id": "document-1",
         "rank": 1,
         "final_score": 0.86,
-        "clip_score": 0.80,
-        "caption_score": 1.0,
-        "metadata_score": 1.0,
-        "calibrated_score": 0.75,
-        "caption": "an invoice with product rows",
+        "visual_score": 0.80,
+        "text_score": 0.0,
+        "fts_score": 0.0,
         "image_url": (
             "/api/documents/document-1/image"
         ),
@@ -102,10 +97,6 @@ def test_search_returns_hybrid_results() -> None:
     assert search_query.text == "invoice"
     assert search_query.top_k == 2
     assert search_query.document_type is None
-    assert (
-        call_arguments.kwargs["use_hybrid_ranking"]
-        is True
-    )
 
 
 def test_search_rejects_invalid_top_k() -> None:

@@ -26,6 +26,9 @@ class OCRResult(BaseModel):
     pages: list[OCRPageResult]
     mean_confidence: float = Field(ge=0.0, le=1.0)
 
+    model_name: str
+    model_version: str | None = None
+
     @property
     def words(self) -> list[OCRWord]:
         return [

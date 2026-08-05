@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image
 
 from app.services.similarity import cosine_similarity
-from app.strategies.clip_retrieval import ClipRetrievalStrategy
+from app.strategies.clip_embedding import ClipEmbeddingStrategy
 
 
 QUERIES = [
@@ -159,7 +159,7 @@ def main() -> None:
             args.output_dir / f"{name}.png"
         )
 
-    strategy = ClipRetrievalStrategy()
+    strategy = ClipEmbeddingStrategy()
 
     image_embeddings = {
         name: strategy.embed_image(view)

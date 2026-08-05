@@ -1,11 +1,12 @@
+import sqlite3
+
 import pytest
 
 from app.domain.document import (
-    ArtifactType,
     DocumentRecord,
-    ModelArtifact,
     ProcessingStatus,
 )
+from app.domain.ocr import OCRResult
 from app.repositories.sqlite_document_repository import (
     DuplicateDocumentError,
     SQLiteDocumentRepository,
@@ -26,7 +27,9 @@ def test_saves_and_retrieves_document(
     assert stored_document.id == sample_document.id
     assert stored_document.checksum == sample_document.checksum
     assert stored_document.document_type == "invoice"
-    assert stored_document.metadata.contains_table is True
+    assert stored_document.language == "en"
+    assert stored_document.page_count == 1
+    assert stored_document.ocr is None
 
 
 def test_retrieves_document_by_checksum(
@@ -35,15 +38,26 @@ def test_retrieves_document_by_checksum(
 ) -> None:
     document_repository.save_document(sample_document)
 
-    stored_document = document_repository.get_document_by_checksum(
-        sample_document.checksum
+    stored_document = (
+        document_repository.get_document_by_checksum(
+            sample_document.checksum
+        )
     )
 
     assert stored_document is not None
     assert stored_document.id == sample_document.id
 
 
-def test_blocks_document_with_duplicate_checksum(
+def test_returns_none_for_unknown_document(
+    document_repository: SQLiteDocumentRepository,
+) -> None:
+    assert (
+        document_repository.get_document("missing-document")
+        is None
+    )
+
+
+def test_blocks_duplicate_checksum(
     document_repository: SQLiteDocumentRepository,
     sample_document: DocumentRecord,
 ) -> None:
@@ -69,7 +83,7 @@ def test_updates_processing_status_and_error(
     document_repository.update_processing_status(
         document_id=sample_document.id,
         status=ProcessingStatus.FAILED,
-        error="Test error",
+        error="OCR processing failed",
     )
 
     stored_document = document_repository.get_document(
@@ -77,112 +91,180 @@ def test_updates_processing_status_and_error(
     )
 
     assert stored_document is not None
-    assert stored_document.processing_status is ProcessingStatus.FAILED
-    assert stored_document.processing_error == "Test error"
+    assert (
+        stored_document.processing_status
+        is ProcessingStatus.FAILED
+    )
+    assert (
+        stored_document.processing_error
+        == "OCR processing failed"
+    )
 
 
-def test_saves_and_retrieves_model_artifact(
+def test_updates_and_retrieves_ocr(
     document_repository: SQLiteDocumentRepository,
     sample_document: DocumentRecord,
+    sample_ocr_result: OCRResult,
 ) -> None:
     document_repository.save_document(sample_document)
 
-    artifact = ModelArtifact(
-        id="invoice_001_clip",
-        document_id=sample_document.id,
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="test-model",
-        model_version="1",
-        storage_path="vectors/invoice_001_clip.npy",
-        dimensions=4,
+    document_repository.update_ocr(
+        sample_document.id,
+        sample_ocr_result,
     )
 
-    document_repository.save_artifact(artifact)
-
-    stored_artifacts = document_repository.get_artifacts(
+    stored_document = document_repository.get_document(
         sample_document.id
     )
 
-    assert len(stored_artifacts) == 1
-    assert stored_artifacts[0].id == artifact.id
-    assert stored_artifacts[0].model_name == "test-model"
-    assert stored_artifacts[0].dimensions == 4
+    assert stored_document is not None
+    assert stored_document.ocr == sample_ocr_result
+
+    with sqlite3.connect(
+        document_repository.database_path
+    ) as connection:
+        row = connection.execute(
+            """
+            SELECT ocr_text, ocr_json
+            FROM documents
+            WHERE id = ?
+            """,
+            (sample_document.id,),
+        ).fetchone()
+
+    assert row is not None
+    assert row[0] == sample_ocr_result.text
+    assert row[1] == sample_ocr_result.model_dump_json()
 
 
-def test_find_artifacts_returns_only_matching_model(
-    document_repository,
+def test_clears_ocr(
+    document_repository: SQLiteDocumentRepository,
     sample_document: DocumentRecord,
+    sample_ocr_result: OCRResult,
 ) -> None:
     document_repository.save_document(sample_document)
-
-    matching_artifact = ModelArtifact(
-        id="clip-artifact",
-        document_id=sample_document.id,
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="clip-model",
-        storage_path="clip-artifact.npy",
-        dimensions=512,
-    )
-    other_model_artifact = ModelArtifact(
-        id="other-model-artifact",
-        document_id=sample_document.id,
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="other-model",
-        storage_path="other-model-artifact.npy",
-        dimensions=512,
-    )
-    caption_artifact = ModelArtifact(
-        id="caption-artifact",
-        document_id=sample_document.id,
-        artifact_type=ArtifactType.CAPTION,
-        model_name="clip-model",
-        content="generated caption",
+    document_repository.update_ocr(
+        sample_document.id,
+        sample_ocr_result,
     )
 
-    document_repository.save_artifact(matching_artifact)
-    document_repository.save_artifact(other_model_artifact)
-    document_repository.save_artifact(caption_artifact)
-
-    artifacts = document_repository.find_artifacts(
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="clip-model",
+    document_repository.update_ocr(
+        sample_document.id,
+        None,
     )
 
-    assert artifacts == [matching_artifact]
+    stored_document = document_repository.get_document(
+        sample_document.id
+    )
+
+    assert stored_document is not None
+    assert stored_document.ocr is None
 
 
-def test_find_artifacts_filters_by_document_type(
-    document_repository,
+def test_update_status_rejects_unknown_document(
+    document_repository: SQLiteDocumentRepository,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="missing-document",
+    ):
+        document_repository.update_processing_status(
+            document_id="missing-document",
+            status=ProcessingStatus.FAILED,
+        )
+
+
+def test_update_ocr_rejects_unknown_document(
+    document_repository: SQLiteDocumentRepository,
+    sample_ocr_result: OCRResult,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="missing-document",
+    ):
+        document_repository.update_ocr(
+            "missing-document",
+            sample_ocr_result,
+        )
+
+
+def test_schema_does_not_create_artifact_table(
+    document_repository: SQLiteDocumentRepository,
+) -> None:
+    with sqlite3.connect(
+        document_repository.database_path
+    ) as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                """
+                SELECT name
+                FROM sqlite_master
+                WHERE type = 'table'
+                """
+            )
+        }
+
+    assert "documents" in tables
+    assert "model_artifacts" not in tables
+    assert "schema_version" not in tables
+
+
+def test_lexical_search_finds_indexed_document(
+    document_repository: SQLiteDocumentRepository,
     sample_document: DocumentRecord,
-    sample_receipt_document: DocumentRecord,
+    sample_ocr_result: OCRResult,
 ) -> None:
     document_repository.save_document(sample_document)
-    document_repository.save_document(sample_receipt_document)
-
-    invoice_artifact = ModelArtifact(
-        id="invoice-embedding",
-        document_id=sample_document.id,
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="clip-model",
-        storage_path="invoice-embedding.npy",
-        dimensions=512,
-    )
-    receipt_artifact = ModelArtifact(
-        id="receipt-embedding",
-        document_id=sample_receipt_document.id,
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="clip-model",
-        storage_path="receipt-embedding.npy",
-        dimensions=512,
+    document_repository.update_ocr(
+        sample_document.id,
+        sample_ocr_result,
     )
 
-    document_repository.save_artifact(invoice_artifact)
-    document_repository.save_artifact(receipt_artifact)
+    results = document_repository.lexical_search("Invoice")
 
-    artifacts = document_repository.find_artifacts(
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="clip-model",
-        document_type="invoice",
+    assert len(results) == 1
+    assert results[0][0] == sample_document.id
+    assert results[0][1] > 0.0
+
+
+def test_lexical_search_returns_empty_for_no_match(
+    document_repository: SQLiteDocumentRepository,
+    sample_document: DocumentRecord,
+    sample_ocr_result: OCRResult,
+) -> None:
+    document_repository.save_document(sample_document)
+    document_repository.update_ocr(
+        sample_document.id,
+        sample_ocr_result,
     )
 
-    assert artifacts == [invoice_artifact]
+    results = document_repository.lexical_search(
+        "xyzzynotarealword"
+    )
+
+    assert results == []
+
+
+def test_lexical_search_returns_empty_for_blank_query(
+    document_repository: SQLiteDocumentRepository,
+) -> None:
+    assert document_repository.lexical_search("   ") == []
+
+
+def test_lexical_search_reflects_updated_ocr(
+    document_repository: SQLiteDocumentRepository,
+    sample_document: DocumentRecord,
+    sample_ocr_result: OCRResult,
+) -> None:
+    document_repository.save_document(sample_document)
+    document_repository.update_ocr(
+        sample_document.id,
+        sample_ocr_result,
+    )
+
+    # Clear OCR — document should no longer be findable
+    document_repository.update_ocr(sample_document.id, None)
+
+    results = document_repository.lexical_search("Invoice")
+    assert results == []

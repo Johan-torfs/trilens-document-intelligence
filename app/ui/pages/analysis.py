@@ -128,19 +128,10 @@ if outcome is not None:
         outcome.analysis.text
     )
 
-    source = outcome.analysis.source
-
-    if source == "open_flamingo":
-        result_column.info(
-            "Bron: OpenFlamingo-modelanalyse"
-        )
-
-    elif source == "caption_fallback":
-        result_column.warning(
-            "OpenFlamingo kon de analyse niet uitvoeren. "
-            "Dit resultaat is een BLIP-captionfallback en "
-            "beantwoordt de vraag mogelijk niet."
-        )
+    result_column.info(
+        "Experimentele OpenFlamingo-output. "
+        "Verifieer het resultaat altijd."
+    )
 
     metric_col1, metric_col2 = st.columns(2)
 
@@ -158,7 +149,6 @@ if outcome is not None:
         " | ".join(
             [
                 f"Document: {outcome.document.id}",
-                f"Bron: {source}",
                 f"Model: {outcome.analysis.model_name}",
                 (
                     "Versie: "

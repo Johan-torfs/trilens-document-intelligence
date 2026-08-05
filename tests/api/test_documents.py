@@ -6,16 +6,13 @@ from PIL import Image
 
 from app.api.dependencies import get_pipeline
 from app.api.main import create_app
-from app.domain.document import (
-    ArtifactType,
-    ModelArtifact,
-    DocumentMetadata,
-    DocumentRecord,
-)
+from app.domain.document import DocumentRecord
+from app.domain.ocr import OCRPageResult, OCRResult
 from app.domain.prepared_document import DocumentSource
 from app.services.document_intelligence_pipeline import (
     IndexDocumentOutcome,
 )
+from app.services.indexing_service import IndexingResult
 
 
 def make_png_bytes() -> bytes:
@@ -52,46 +49,41 @@ def test_upload_indexes_document(
             height=300,
             mime_type=source.mime_type,
             document_type=document_type,
-            metadata=DocumentMetadata(
-                document_type=document_type,
-            ),
+            page_count=1,
         )
 
-        embedding = ModelArtifact(
-            id="embedding-1",
+        indexing_result = IndexingResult(
             document_id=document.id,
-            artifact_type=ArtifactType.IMAGE_EMBEDDING,
-            model_name="fake-clip",
-            storage_path=str(
-                tmp_path / "embedding-1.npy"
-            ),
+            page_count=1,
             dimensions=512,
+            model_name="fake-clip",
+            model_version=None,
+            reused_existing=False,
         )
 
-        caption = ModelArtifact(
-            id="caption-1",
-            document_id=document.id,
-            artifact_type=ArtifactType.CAPTION,
-            model_name="fake-blip",
-            content="an invoice document",
-        )
-
-        ocr = ModelArtifact(
-            id="ocr-1",
-            document_id=document.id,
-            artifact_type=ArtifactType.OCR,
+        ocr_result = OCRResult(
+            text="Invoice text",
+            pages=[
+                OCRPageResult(
+                    page_number=1,
+                    text="Invoice text",
+                    words=[],
+                    mean_confidence=0.9,
+                )
+            ],
+            mean_confidence=0.9,
             model_name="fake-doctr",
-            content="Invoice text",
+            model_version="version-1",
         )
 
         return IndexDocumentOutcome(
             document=document,
-            embedding_artifact=embedding,
-            caption_artifact=caption,
-            embedding_error=None,
-            caption_error=None,
-            ocr_artifact=ocr,
+            indexing_result=indexing_result,
+            ocr_result=ocr_result,
+            text_indexing_result=None,
+            indexing_error=None,
             ocr_error=None,
+            text_indexing_error=None,
             reused_document=False,
             duration_ms=125.0,
         )
@@ -128,12 +120,9 @@ def test_upload_indexes_document(
     assert body["document_type"] == "invoice"
     assert body["original_filename"] == "invoice.png"
     assert body["is_searchable"] is True
-    assert body["has_caption"] is True
+    assert body["has_ocr"] is True
     assert body["fully_succeeded"] is True
     assert body["reused_document"] is False
-    assert body["caption"] == "an invoice document"
-    assert body["embedding_model"] == "fake-clip"
-    assert body["caption_model"] == "fake-blip"
     assert body["duration_ms"] == 125.0
 
     pipeline.index_document.assert_called_once()
@@ -155,9 +144,6 @@ def test_get_document_image_returns_file(
         height=300,
         mime_type="image/png",
         document_type="invoice",
-        metadata=DocumentMetadata(
-            document_type="invoice",
-        ),
     )
 
     pipeline = MagicMock()

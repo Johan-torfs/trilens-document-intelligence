@@ -35,17 +35,14 @@ class IndexDocumentResponse(BaseModel):
     original_filename: str
 
     is_searchable: bool
-    has_caption: bool
+    has_ocr: bool
     fully_succeeded: bool
     reused_document: bool
 
-    caption: str | None
-    embedding_model: str | None
-    caption_model: str | None
+    indexing_error: str | None
+    ocr_error: str | None
 
-    embedding_error: str | None
-    caption_error: str | None
-
+    classification_confidence: float | None
     duration_ms: float
 
 
@@ -57,7 +54,7 @@ class IndexDocumentResponse(BaseModel):
 def index_document(
     pipeline: PipelineDependency,
     file: UploadFile = File(...),
-    document_type: str = Form(...),
+    document_type: str | None = Form(default=None),
 ) -> IndexDocumentResponse:
     try:
         file_bytes = file.file.read()
@@ -65,12 +62,11 @@ def index_document(
         if not file_bytes:
             raise ValueError("Het geüploade bestand is leeg.")
 
-        cleaned_document_type = document_type.strip()
-
-        if not cleaned_document_type:
-            raise ValueError(
-                "Het documenttype mag niet leeg zijn."
-            )
+        explicit_type: str | None = None
+        if document_type is not None:
+            cleaned = document_type.strip()
+            if cleaned:
+                explicit_type = cleaned
 
         source = DocumentSource(
             filename=file.filename or "document",
@@ -88,7 +84,7 @@ def index_document(
     try:
         outcome = pipeline.index_document(
             source=source,
-            document_type=cleaned_document_type,
+            document_type=explicit_type,
         )
 
     except Exception as error:
@@ -154,25 +150,11 @@ def _to_response(
             outcome.document.original_filename
         ),
         is_searchable=outcome.is_searchable,
-        has_caption=outcome.has_caption,
+        has_ocr=outcome.has_ocr,
         fully_succeeded=outcome.fully_succeeded,
         reused_document=outcome.reused_document,
-        caption=(
-            outcome.caption_artifact.content
-            if outcome.caption_artifact
-            else None
-        ),
-        embedding_model=(
-            outcome.embedding_artifact.model_name
-            if outcome.embedding_artifact
-            else None
-        ),
-        caption_model=(
-            outcome.caption_artifact.model_name
-            if outcome.caption_artifact
-            else None
-        ),
-        embedding_error=outcome.embedding_error,
-        caption_error=outcome.caption_error,
+        indexing_error=outcome.indexing_error,
+        ocr_error=outcome.ocr_error,
+        classification_confidence=outcome.classification_confidence,
         duration_ms=outcome.duration_ms,
     )

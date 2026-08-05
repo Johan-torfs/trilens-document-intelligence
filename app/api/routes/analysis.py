@@ -33,9 +33,6 @@ class AnalyzeDocumentResponse(BaseModel):
     question: str
     text: str
 
-    source: str
-    used_fallback: bool
-
     model_name: str
     model_version: str | None
 
@@ -91,8 +88,6 @@ def _to_response(
         document_id=outcome.document.id,
         question=outcome.question,
         text=outcome.analysis.text,
-        source=outcome.analysis.source,
-        used_fallback=outcome.used_fallback,
         model_name=outcome.analysis.model_name,
         model_version=outcome.analysis.model_version,
         model_duration_ms=outcome.analysis.duration_ms,

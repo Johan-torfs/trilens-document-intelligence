@@ -4,10 +4,7 @@ from pathlib import Path
 import streamlit as st
 
 from app.bootstrap import create_document_intelligence_pipeline
-from app.repositories.sqlite_document_repository import (
-    SQLiteDocumentRepository,
-)
-from app.repositories.vector_repository import VectorRepository
+from app.repositories.database import get_repositories
 from app.services.document_intelligence_pipeline import (
     DocumentIntelligencePipeline,
 )
@@ -27,14 +24,9 @@ def get_pipeline() -> DocumentIntelligencePipeline:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     VECTOR_DIR.mkdir(parents=True, exist_ok=True)
 
-    document_repository = SQLiteDocumentRepository(
-        database_path=DATABASE_PATH,
-    )
-
-    vector_repository = VectorRepository(
-        storage_dir=VECTOR_DIR,
-    )
-
+    repositories = get_repositories()
+    document_repository = repositories.documents
+    vector_repository = repositories.vectors
     open_flamingo_enabled = (
         os.getenv(
             "TRILENS_OPEN_FLAMINGO_ENABLED",

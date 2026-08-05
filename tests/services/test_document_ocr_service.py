@@ -3,7 +3,7 @@ from unittest.mock import create_autospec
 import pytest
 from PIL import Image
 
-from app.domain.document import ArtifactType, ModelArtifact
+from app.domain.document import DocumentRecord
 from app.domain.ocr import (
     OCRBoundingBox,
     OCRPageResult,
@@ -17,6 +17,24 @@ from app.services.document_ocr_service import (
     OCRProcessingError,
 )
 from app.strategies.ocr import OCRStrategy
+
+
+def make_document(
+    document_id: str = "document-1",
+    ocr: OCRResult | None = None,
+) -> DocumentRecord:
+    return DocumentRecord(
+        id=document_id,
+        original_filename="invoice.png",
+        stored_path="data/invoice.png",
+        checksum="checksum-1",
+        width=100,
+        height=100,
+        page_count=1,
+        mime_type="image/png",
+        document_type="invoice",
+        ocr=ocr,
+    )
 
 
 def make_page(
@@ -65,6 +83,8 @@ def make_ocr_result(
         text="\n\n".join(p.text for p in page_results),
         pages=page_results,
         mean_confidence=mean_confidence,
+        model_name="fake-ocr",
+        model_version="1.0",
     )
 
 
@@ -90,33 +110,33 @@ class FakeOCRStrategy(OCRStrategy):
         return make_ocr_result()
 
 
-def test_process_document_stores_ocr_artifact() -> None:
+def test_process_document_calls_strategy_and_updates_ocr() -> None:
     repository = create_autospec(
         DocumentRepository,
         instance=True,
     )
-    repository.get_artifacts.return_value = []
 
     strategy = FakeOCRStrategy()
     service = DocumentOCRService(strategy, repository)
 
-    artifact = service.process_document(
-        document_id="document-1",
+    document = make_document()
+    result = service.process_document(
+        document=document,
         pages=[make_page()],
     )
 
-    assert artifact.artifact_type == ArtifactType.OCR
-    assert artifact.model_name == "fake-ocr"
-    assert artifact.model_version == "1.0"
-
-    result = OCRResult.model_validate_json(artifact.content)
-
+    assert isinstance(result, OCRResult)
+    assert result.model_name == "fake-ocr"
+    assert result.model_version == "1.0"
     assert result.text == "Invoice total 42.50"
     assert result.pages[0].page_number == 1
     assert result.pages[0].words[0].text == "Invoice"
     assert result.mean_confidence == 0.95
 
-    repository.save_artifact.assert_called_once_with(artifact)
+    repository.update_ocr.assert_called_once_with(
+        document_id=document.id,
+        result=result,
+    )
     assert strategy.calls == 1
 
 
@@ -125,7 +145,6 @@ def test_process_document_multi_page_stores_all_pages() -> None:
         DocumentRepository,
         instance=True,
     )
-    repository.get_artifacts.return_value = []
 
     class MultiPageOCRStrategy(OCRStrategy):
         @property
@@ -137,7 +156,7 @@ def test_process_document_multi_page_stores_all_pages() -> None:
             return "1.0"
 
         def extract(
-            self, pages: list[DocumentPage]
+            self, pages
         ) -> OCRResult:
             return make_ocr_result(
                 [
@@ -150,13 +169,22 @@ def test_process_document_multi_page_stores_all_pages() -> None:
         MultiPageOCRStrategy(), repository
     )
 
+    document = DocumentRecord(
+        id="document-1",
+        original_filename="invoice.pdf",
+        stored_path="data/invoice.pdf",
+        checksum="checksum-1",
+        width=100,
+        height=100,
+        page_count=3,
+        mime_type="application/pdf",
+        document_type="invoice",
+    )
     pages = [make_page(1), make_page(2), make_page(3)]
-    artifact = service.process_document(
-        document_id="document-1",
+    result = service.process_document(
+        document=document,
         pages=pages,
     )
-
-    result = OCRResult.model_validate_json(artifact.content)
 
     assert len(result.pages) == 3
     assert result.pages[0].page_number == 1
@@ -167,33 +195,26 @@ def test_process_document_multi_page_stores_all_pages() -> None:
     assert "Page 3 text" in result.text
 
 
-def test_process_document_uses_cached_artifact() -> None:
-    cached = ModelArtifact(
-        id="ocr-1",
-        document_id="document-1",
-        artifact_type=ArtifactType.OCR,
-        model_name="fake-ocr",
-        model_version="1.0",
-        content=make_ocr_result().model_dump_json(),
-    )
+def test_process_document_uses_cached_result() -> None:
+    cached_ocr = make_ocr_result()
 
     repository = create_autospec(
         DocumentRepository,
         instance=True,
     )
-    repository.get_artifacts.return_value = [cached]
 
     strategy = FakeOCRStrategy()
     service = DocumentOCRService(strategy, repository)
 
+    document = make_document(ocr=cached_ocr)
     result = service.process_document(
-        document_id="document-1",
+        document=document,
         pages=[make_page()],
     )
 
-    assert result == cached
+    assert result == cached_ocr
     assert strategy.calls == 0
-    repository.save_artifact.assert_not_called()
+    repository.update_ocr.assert_not_called()
 
 
 def test_process_document_wraps_model_errors() -> None:
@@ -201,7 +222,6 @@ def test_process_document_wraps_model_errors() -> None:
         DocumentRepository,
         instance=True,
     )
-    repository.get_artifacts.return_value = []
 
     service = DocumentOCRService(
         FakeOCRStrategy(should_fail=True),
@@ -210,11 +230,11 @@ def test_process_document_wraps_model_errors() -> None:
 
     with pytest.raises(
         OCRProcessingError,
-        match="OCR failed for document document-1",
+        match="OCR failed for document 'document-1'",
     ):
         service.process_document(
-            document_id="document-1",
+            document=make_document(),
             pages=[make_page()],
         )
 
-    repository.save_artifact.assert_not_called()
+    repository.update_ocr.assert_not_called()

@@ -1,94 +1,58 @@
 from unittest.mock import create_autospec
 
-import numpy as np
-from PIL import Image
-
-from app.domain.document import (
-    ArtifactType,
-    DocumentMetadata,
-    DocumentRecord,
-    ModelArtifact,
-)
+from app.domain.document import DocumentRecord
 from app.domain.search import SearchQuery
 from app.repositories.document_repository import DocumentRepository
-from app.repositories.vector_repository import VectorRepository
 from app.services.document_search_service import DocumentSearchService
-from app.services.retrieval_service import RetrievalService
-from app.strategies.retrieval import RetrievalStrategy
+from app.services.retrieval_service import DocumentSearchMatch, RetrievalService
 
 
-class FakeRetrievalStrategy(RetrievalStrategy):
-    @property
-    def model_name(self) -> str:
-        return "fake-clip-model"
-
-    def embed_image(self, image: Image.Image) -> np.ndarray:
-        return np.array([1.0, 0.0], dtype=np.float32)
-
-    def embed_text(self, text: str) -> np.ndarray:
-        return np.array([1.0, 0.0], dtype=np.float32)
-
-    @staticmethod
-    def calibrate_score(raw: float) -> float:
-        return raw
-
-
-def test_search_returns_enriched_document_result(
-    vector_repository: VectorRepository,
-) -> None:
-    embedding_artifact = ModelArtifact(
-        id="invoice-embedding",
-        document_id="document-001",
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="fake-clip-model",
-        storage_path="invoice-embedding.npy",
-        dimensions=2,
-    )
-
-    caption_artifact = ModelArtifact(
-        id="invoice-caption",
-        document_id="document-001",
-        artifact_type=ArtifactType.CAPTION,
-        model_name="fake-caption-model",
-        content="an automatically generated invoice caption",
-    )
-
-    document = DocumentRecord(
-        id="document-001",
+def make_document(
+    document_id: str = "document-001",
+    document_type: str = "invoice",
+    stored_path: str = "data/documents/invoice.png",
+) -> DocumentRecord:
+    return DocumentRecord(
+        id=document_id,
         original_filename="invoice.png",
-        stored_path="data/documents/invoice.png",
+        stored_path=stored_path,
         checksum="test-checksum",
         width=100,
         height=100,
+        page_count=1,
         mime_type="image/png",
-        document_type="invoice",
-        metadata=DocumentMetadata(
-            document_type="invoice",
-        ),
+        document_type=document_type,
     )
 
-    vector_repository.save(
-        artifact_id=embedding_artifact.id,
-        vector=np.array([1.0, 0.0], dtype=np.float32),
+
+def make_match(
+    document_id: str = "document-001",
+    score: float = 0.91,
+    best_page_number: int = 1,
+) -> DocumentSearchMatch:
+    return DocumentSearchMatch(
+        document_id=document_id,
+        score=score,
+        best_page_number=best_page_number,
+        pages=(),
     )
 
+
+def test_search_returns_enriched_document_result() -> None:
+    retrieval_service = create_autospec(
+        RetrievalService,
+        instance=True,
+    )
     document_repository = create_autospec(
         DocumentRepository,
         instance=True,
     )
-    document_repository.find_artifacts.return_value = [
-        embedding_artifact
-    ]
-    document_repository.get_document.return_value = document
-    document_repository.get_artifacts.return_value = [
-        embedding_artifact,
-        caption_artifact,
-    ]
 
-    retrieval_service = RetrievalService(
-        strategy=FakeRetrievalStrategy(),
-        vector_repository=vector_repository,
-    )
+    document = make_document()
+    retrieval_service.search.return_value = [make_match()]
+    retrieval_service.search_text.return_value = []
+    document_repository.get_document.return_value = document
+    document_repository.lexical_search.return_value = []
 
     search_service = DocumentSearchService(
         retrieval_service=retrieval_service,
@@ -103,39 +67,33 @@ def test_search_returns_enriched_document_result(
     )
 
     assert len(results) == 1
-
     result = results[0]
-
     assert result.document_id == "document-001"
-    assert result.score == 1.0
+    assert result.score == 0.91
     assert result.rank == 1
-    assert (
-        result.caption
-        == "an automatically generated invoice caption"
-    )
     assert result.stored_path == "data/documents/invoice.png"
     assert result.document_type == "invoice"
 
-    document_repository.find_artifacts.assert_called_once_with(
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="fake-clip-model",
+    retrieval_service.search.assert_called_once_with(
+        query="an invoice",
+        top_k=5,
         document_type=None,
     )
 
 
-def test_search_passes_document_type_filter_to_repository(
-    vector_repository: VectorRepository,
-) -> None:
+def test_search_passes_document_type_filter() -> None:
+    retrieval_service = create_autospec(
+        RetrievalService,
+        instance=True,
+    )
     document_repository = create_autospec(
         DocumentRepository,
         instance=True,
     )
-    document_repository.find_artifacts.return_value = []
 
-    retrieval_service = RetrievalService(
-        strategy=FakeRetrievalStrategy(),
-        vector_repository=vector_repository,
-    )
+    retrieval_service.search.return_value = []
+    retrieval_service.search_text.return_value = []
+    document_repository.lexical_search.return_value = []
 
     search_service = DocumentSearchService(
         retrieval_service=retrieval_service,
@@ -152,8 +110,37 @@ def test_search_passes_document_type_filter_to_repository(
 
     assert results == []
 
-    document_repository.find_artifacts.assert_called_once_with(
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="fake-clip-model",
+    retrieval_service.search.assert_called_once_with(
+        query="a receipt",
+        top_k=5,
         document_type="receipt",
     )
+
+
+def test_search_skips_missing_documents() -> None:
+    retrieval_service = create_autospec(
+        RetrievalService,
+        instance=True,
+    )
+    document_repository = create_autospec(
+        DocumentRepository,
+        instance=True,
+    )
+
+    retrieval_service.search.return_value = [
+        make_match(document_id="missing")
+    ]
+    retrieval_service.search_text.return_value = []
+    document_repository.get_document.return_value = None
+    document_repository.lexical_search.return_value = []
+
+    search_service = DocumentSearchService(
+        retrieval_service=retrieval_service,
+        document_repository=document_repository,
+    )
+
+    results = search_service.search(
+        SearchQuery(text="invoice", top_k=5)
+    )
+
+    assert results == []

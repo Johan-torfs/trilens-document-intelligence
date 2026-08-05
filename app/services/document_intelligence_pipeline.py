@@ -5,24 +5,24 @@ from uuid import uuid4
 
 from app.domain.checksum import calculate_checksum_bytes
 from app.domain.document import (
-    ArtifactType,
-    DocumentMetadata,
     DocumentRecord,
-    ModelArtifact,
     ProcessingStatus,
 )
+from app.domain.ocr import OCRResult
 from app.domain.prepared_document import (
     DocumentPage,
     DocumentSource,
 )
 from app.repositories.document_repository import DocumentRepository
-from app.services.document_caption_service import (
-    DocumentCaptionService,
-)
 from app.services.document_preparation_service import (
     DocumentPreparationService,
 )
-from app.services.indexing_service import IndexingService
+from app.services.indexing_service import DocumentIndexingError, IndexingResult, IndexingService
+from app.services.text_indexing_service import (
+    TextIndexingError,
+    TextIndexingResult,
+    TextIndexingService,
+)
 from app.domain.search import SearchQuery, SearchResult
 from app.services.document_search_service import (
     DocumentSearchService,
@@ -32,7 +32,13 @@ from app.services.analysis_service import (
     AnalysisResult,
     AnalysisService,
 )
-from app.services.document_ocr_service import DocumentOCRService
+from app.services.document_classification_service import (
+    DocumentClassificationService,
+)
+from app.services.document_ocr_service import DocumentOCRService, OCRProcessingError
+from app.services.score_calibration import (
+    LinearScoreCalibrator,
+)
 
 
 _MIME_TO_EXTENSION: dict[str, str] = {
@@ -48,26 +54,23 @@ _MIME_TO_EXTENSION: dict[str, str] = {
 @dataclass(frozen=True)
 class IndexDocumentOutcome:
     document: DocumentRecord
-    embedding_artifact: ModelArtifact | None
-    caption_artifact: ModelArtifact | None
-    embedding_error: str | None
-    caption_error: str | None
-    ocr_artifact: ModelArtifact | None
+    indexing_result: IndexingResult | None
+    ocr_result: OCRResult | None
+    text_indexing_result: TextIndexingResult | None
+    indexing_error: str | None
     ocr_error: str | None
+    text_indexing_error: str | None
     reused_document: bool
     duration_ms: float
+    classification_confidence: float | None = None
 
     @property
     def is_searchable(self) -> bool:
-        return self.embedding_artifact is not None
-
-    @property
-    def has_caption(self) -> bool:
-        return self.caption_artifact is not None
+        return self.indexing_result is not None
 
     @property
     def has_ocr(self) -> bool:
-        return self.ocr_artifact is not None
+        return self.ocr_result is not None
 
     @property
     def fully_succeeded(self) -> bool:
@@ -80,12 +83,11 @@ class RankedDocument:
     rank: int
 
     final_score: float
-    clip_score: float
-    caption_score: float
-    metadata_score: float
+    visual_score: float
+    text_score: float
+    fts_score: float
     calibrated_score: float
 
-    caption: str | None
     stored_path: str
     document_type: str
 
@@ -105,10 +107,6 @@ class AnalyzeDocumentOutcome:
     analysis: AnalysisResult
     duration_ms: float
 
-    @property
-    def used_fallback(self) -> bool:
-        return self.analysis.source == "caption_fallback"
-
 
 class DocumentIntelligencePipeline:
     def __init__(
@@ -117,28 +115,47 @@ class DocumentIntelligencePipeline:
         preparation_service: DocumentPreparationService,
         upload_dir: Path,
         indexing_service: IndexingService,
-        caption_service: DocumentCaptionService | None,
         document_search_service: DocumentSearchService,
         retrieval_service: RetrievalService,
         analysis_service: AnalysisService,
         ocr_service: DocumentOCRService,
+        score_calibrator: LinearScoreCalibrator,
+        text_indexing_service: TextIndexingService | None = None,
+        classification_service: DocumentClassificationService | None = None,
     ) -> None:
         self._document_repository = document_repository
         self._preparation_service = preparation_service
         self._upload_dir = upload_dir
         self._indexing_service = indexing_service
-        self._caption_service = caption_service
         self._document_search_service = document_search_service
         self._retrieval_service = retrieval_service
         self._analysis_service = analysis_service
         self._ocr_service = ocr_service
+        self._score_calibrator = score_calibrator
+        self._text_indexing_service = text_indexing_service
+        self._classification_service = classification_service
 
     def index_document(
         self,
         source: DocumentSource,
-        document_type: str,
+        document_type: str | None = None,
     ) -> IndexDocumentOutcome:
         started_at = perf_counter()
+
+        auto_classify = document_type is None
+
+        if not auto_classify:
+            cleaned_document_type: str = document_type.strip()  # type: ignore[union-attr]
+            if not cleaned_document_type:
+                raise ValueError(
+                    "Het documenttype mag niet leeg zijn."
+                )
+        else:
+            if self._classification_service is None:
+                raise ValueError(
+                    "Geen classificationservice geconfigureerd voor automatische detectie."
+                )
+            cleaned_document_type = "unknown"
 
         checksum = calculate_checksum_bytes(source.content)
 
@@ -150,52 +167,57 @@ class DocumentIntelligencePipeline:
 
         reused_document = existing_document is not None
 
-        embedding_artifact: ModelArtifact | None = None
-        ocr_artifact: ModelArtifact | None = None
-        caption_artifact: ModelArtifact | None = None
-
         if existing_document is not None:
-            existing_artifacts = (
-                self._document_repository.get_artifacts(
-                    existing_document.id
+            try:
+                existing_indexing = (
+                    self._indexing_service.current_result(
+                        existing_document
+                    )
                 )
-            )
-            embedding_artifact = self._find_embedding(
-                existing_artifacts
-            )
-            ocr_artifact = self._find_ocr(existing_artifacts)
-            caption_artifact = self._find_caption(
-                existing_artifacts
+            except DocumentIndexingError:
+                existing_indexing = None    
+
+            existing_ocr = self._ocr_service.current_result(
+                existing_document
             )
 
-            # Volledig en met de actieve modellen verwerkt:
-            # niets opnieuw uitvoeren.
             if (
-                embedding_artifact is not None
-                and ocr_artifact is not None
-                and (
-                    caption_artifact is not None
-                    or self._caption_service is None
-                )
+                existing_indexing is not None
+                and existing_ocr is not None
             ):
+                existing_text = None
+
+                if self._text_indexing_service is not None:
+                    try:
+                        existing_text = (
+                            self._text_indexing_service.current_result(
+                                existing_document
+                            )
+                        )
+                    except TextIndexingError:
+                        pass
+
                 return IndexDocumentOutcome(
                     document=existing_document,
-                    embedding_artifact=embedding_artifact,
-                    caption_artifact=caption_artifact,
-                    embedding_error=None,
-                    caption_error=None,
-                    ocr_artifact=ocr_artifact,
+                    indexing_result=existing_indexing,
+                    ocr_result=existing_ocr,
+                    text_indexing_result=existing_text,
+                    indexing_error=None,
                     ocr_error=None,
+                    text_indexing_error=None,
                     reused_document=True,
                     duration_ms=self._elapsed_ms(started_at),
                 )
 
-        # Alleen nodig wanneer minstens één modelartifact ontbreekt.
         prepared = self._preparation_service.prepare(source)
         pages = prepared.pages
 
         if existing_document is None:
-            stored_path = self._store_file(source, checksum)
+            stored_path = self._store_file(
+                source=source,
+                checksum=checksum,
+            )
+
             stored_document = DocumentRecord(
                 id=str(uuid4()),
                 original_filename=source.filename,
@@ -205,16 +227,22 @@ class DocumentIntelligencePipeline:
                 height=pages[0].height,
                 mime_type=source.mime_type,
                 page_count=len(pages),
-                document_type=document_type,
-                metadata=DocumentMetadata(
-                    document_type=document_type,
-                ),
+                document_type=cleaned_document_type,
             )
+
             self._document_repository.save_document(
                 stored_document
             )
+
         else:
             stored_document = existing_document
+
+            if stored_document.page_count != len(pages):
+                raise ValueError(
+                    f"Stored document '{stored_document.id}' "
+                    f"contains {stored_document.page_count} pages, "
+                    f"but preparation returned {len(pages)}."
+                )
 
         preprocessing_results = (
             self._preparation_service.preprocess_pages(prepared)
@@ -222,109 +250,131 @@ class DocumentIntelligencePipeline:
 
         preprocessed_pages = [
             DocumentPage(
-                page_number=original.page_number,
+                page_number=page.page_number,
                 image=result.image,
             )
-            for original, result in zip(
-                pages, preprocessing_results
+            for page, result in zip(
+                pages,
+                preprocessing_results,
+                strict=True,
             )
         ]
 
-        preprocessed_images = [
-            result.image for result in preprocessing_results
-        ]
-
         self._document_repository.update_processing_status(
-            stored_document.id,
-            ProcessingStatus.PROCESSING,
+            document_id=stored_document.id,
+            status=ProcessingStatus.PROCESSING,
         )
 
-        embedding_error: str | None = None
-        caption_error: str | None = None
+        indexing_result: IndexingResult | None = None
+        ocr_result: OCRResult | None = None
+        text_indexing_result: TextIndexingResult | None = None
+
+        indexing_error: str | None = None
         ocr_error: str | None = None
+        text_indexing_error: str | None = None
 
-        if embedding_artifact is None:
-            try:
-                embedding_artifact = (
-                    self._indexing_service.index_pages(
-                        document_id=stored_document.id,
-                        images=preprocessed_images,
-                    )
-                )
-            except RuntimeError as error:
-                embedding_error = str(error)
-
-        if ocr_artifact is None:
-            try:
-                ocr_artifact = self._ocr_service.process_document(
-                    document_id=stored_document.id,
-                    pages=preprocessed_pages,
-                )
-            except RuntimeError as error:
-                ocr_error = str(error)
-
-        if caption_artifact is None and self._caption_service is not None:
-            try:
-                caption_artifact = (
-                    self._caption_service.caption_document(
-                        document_id=stored_document.id,
-                        image=preprocessed_images[0],
-                    )
-                )
-            except RuntimeError as error:
-                caption_error = str(error)
-
-        if embedding_artifact is None:
-            final_status = ProcessingStatus.FAILED
-            processing_error = (
-                embedding_error
-                or "Er kon geen CLIP-embedding worden gemaakt."
+        try:
+            indexing_result = self._indexing_service.index_pages(
+                document=stored_document,
+                pages=preprocessed_pages,
             )
-        else:
-            final_status = ProcessingStatus.COMPLETED
-            processing_error = ocr_error or caption_error
+        except DocumentIndexingError as error:
+            indexing_error = str(error)
+
+        try:
+            ocr_result = self._ocr_service.process_document(
+                document=stored_document,
+                pages=preprocessed_pages,
+            )
+        except OCRProcessingError as error:
+            ocr_error = str(error)
+
+        if (
+            self._text_indexing_service is not None
+            and ocr_result is not None
+        ):
+            try:
+                text_indexing_result = (
+                    self._text_indexing_service.index_document_text(
+                        document=stored_document,
+                        ocr_result=ocr_result,
+                    )
+                )
+            except TextIndexingError as error:
+                text_indexing_error = str(error)
+
+        classification_confidence: float | None = None
+
+        if auto_classify and self._classification_service is not None:
+            ocr_text = ocr_result.text if ocr_result is not None else ""
+            classification_result = self._classification_service.classify(
+                image=preprocessed_pages[0].image,
+                ocr_text=ocr_text,
+            )
+            classification_confidence = classification_result.confidence
+            self._document_repository.update_document_type(
+                document_id=stored_document.id,
+                document_type=classification_result.document_type,
+            )
+
+        fully_succeeded = (
+            indexing_result is not None
+            and ocr_result is not None
+        )
+
+        final_status = (
+            ProcessingStatus.COMPLETED
+            if fully_succeeded
+            else ProcessingStatus.FAILED
+        )
+
+        errors = [
+            error
+            for error in (
+                indexing_error,
+                ocr_error,
+                text_indexing_error,
+            )
+            if error
+        ]
+
+        processing_error = (
+            " | ".join(errors)
+            if errors
+            else None
+        )
 
         self._document_repository.update_processing_status(
-            stored_document.id,
-            final_status,
-            processing_error,
+            document_id=stored_document.id,
+            status=final_status,
+            error=processing_error,
+        )
+
+        updated_document = (
+            self._document_repository.get_document(
+                stored_document.id
+            )
+            or stored_document
         )
 
         return IndexDocumentOutcome(
-            document=stored_document,
-            embedding_artifact=embedding_artifact,
-            caption_artifact=caption_artifact,
-            embedding_error=embedding_error,
-            caption_error=caption_error,
-            ocr_artifact=ocr_artifact,
+            document=updated_document,
+            indexing_result=indexing_result,
+            ocr_result=ocr_result,
+            text_indexing_result=text_indexing_result,
+            indexing_error=indexing_error,
             ocr_error=ocr_error,
+            text_indexing_error=text_indexing_error,
             reused_document=reused_document,
             duration_ms=self._elapsed_ms(started_at),
+            classification_confidence=classification_confidence,
         )
 
     def search(
         self,
         query: SearchQuery,
-        use_hybrid_ranking: bool = False,
     ) -> SearchOutcome:
         started_at = perf_counter()
-
-        if not use_hybrid_ranking:
-            baseline_results = (
-                self._document_search_service.search(query)
-            )
-
-            results = [
-                self._to_clip_ranked_document(result)
-                for result in baseline_results
-            ]
-
-            return SearchOutcome(
-                query=query,
-                ranking_mode="clip",
-                results=results,
-                duration_ms=self._elapsed_ms(started_at),
-            )
 
         candidate_top_k = min(query.top_k * 3, 100)
 
@@ -356,11 +406,10 @@ class DocumentIntelligencePipeline:
                 document_id=result.document_id,
                 rank=rank,
                 final_score=result.final_score,
-                clip_score=result.clip_score,
-                caption_score=result.caption_score,
-                metadata_score=result.metadata_score,
+                visual_score=result.visual_score,
+                text_score=result.text_score,
+                fts_score=result.fts_score,
                 calibrated_score=result.calibrated_score,
-                caption=result.caption,
                 stored_path=result.stored_path,
                 document_type=result.document_type,
             )
@@ -485,147 +534,31 @@ class DocumentIntelligencePipeline:
 
         return stored_path
 
-    def _to_clip_ranked_document(
-        self,
-        result: SearchResult,
-    ) -> RankedDocument:
-        return RankedDocument(
-            document_id=result.document_id,
-            rank=result.rank,
-            final_score=result.score,
-            clip_score=result.score,
-            caption_score=0.0,
-            metadata_score=0.0,
-            calibrated_score=self._retrieval_service.calibrate_score(result.score),
-            caption=result.caption,
-            stored_path=result.stored_path,
-            document_type=result.document_type,
-        )
-
-
     def _to_hybrid_ranked_document(
         self,
         query: SearchQuery,
         result: SearchResult,
     ) -> RankedDocument:
-        caption_score = 0.0
-
-        if result.caption:
-            caption_score = (
-                self._retrieval_service.text_similarity(
-                    query.text,
-                    result.caption,
-                )
-            )
-
-        metadata_score = self._metadata_similarity(
-            query=query,
-            result=result,
-        )
-
-        if result.caption:
+        if result.text_score > 0.0 or result.fts_score > 0.0:
             final_score = (
-                0.70 * result.score
-                + 0.20 * caption_score
-                + 0.10 * metadata_score
+                0.60 * result.score
+                + 0.30 * result.text_score
+                + 0.10 * result.fts_score
             )
         else:
-            final_score = (
-                0.875 * result.score
-                + 0.125 * metadata_score
-            )
+            final_score = result.score
 
         return RankedDocument(
             document_id=result.document_id,
             rank=result.rank,
             final_score=final_score,
-            clip_score=result.score,
-            caption_score=caption_score,
-            metadata_score=metadata_score,
-            calibrated_score=self._retrieval_service.calibrate_score(result.score),
-            caption=result.caption,
+            visual_score=result.score,
+            text_score=result.text_score,
+            fts_score=result.fts_score,
+            calibrated_score=self._score_calibrator.calibrate(final_score),
             stored_path=result.stored_path,
             document_type=result.document_type,
         )
-
-
-    def _metadata_similarity(
-        self,
-        query: SearchQuery,
-        result: SearchResult,
-    ) -> float:
-        if query.document_type is not None:
-            return (
-                1.0
-                if result.document_type == query.document_type
-                else 0.0
-            )
-
-        readable_document_type = (
-            result.document_type.replace("_", " ")
-        )
-
-        return max(
-            0.0,
-            self._retrieval_service.text_similarity(
-                query.text,
-                readable_document_type,
-            ),
-        )
-
-    def _find_embedding(
-        self,
-        artifacts: list[ModelArtifact],
-    ) -> ModelArtifact | None:
-        for artifact in reversed(artifacts):
-            if (
-                artifact.artifact_type
-                == ArtifactType.IMAGE_EMBEDDING
-                and artifact.model_name
-                == self._indexing_service.model_name
-            ):
-                return artifact
-
-        return None
-
-    def _find_caption(
-        self,
-        artifacts: list[ModelArtifact],
-    ) -> ModelArtifact | None:
-        if self._caption_service is None:
-            return None
-
-        for artifact in reversed(artifacts):
-            if (
-                artifact.artifact_type
-                == ArtifactType.CAPTION
-                and artifact.model_name
-                == self._caption_service.model_name
-                and artifact.model_version
-                == self._caption_service.model_version
-                and artifact.content
-            ):
-                return artifact
-
-        return None
-
-
-    def _find_ocr(
-        self,
-        artifacts: list[ModelArtifact],
-    ) -> ModelArtifact | None:
-        for artifact in reversed(artifacts):
-            if (
-                artifact.artifact_type == ArtifactType.OCR
-                and artifact.model_name
-                == self._ocr_service.model_name
-                and artifact.model_version
-                == self._ocr_service.model_version
-                and artifact.content
-            ):
-                return artifact
-
-        return None
 
     @staticmethod
     def _elapsed_ms(started_at: float) -> float:
