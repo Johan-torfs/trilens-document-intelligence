@@ -11,7 +11,7 @@ from PIL import Image
 from transformers import AutoModel, AutoProcessor
 
 from app.services.similarity import cosine_similarity
-from app.strategies.clip_retrieval import ClipRetrievalStrategy
+from app.strategies.clip_embedding import ClipEmbeddingStrategy
 
 
 SIGLIP_MODEL_NAME = "google/siglip-base-patch16-384"
@@ -343,7 +343,7 @@ def main() -> None:
     )
 
     clip, clip_load_ms = load_strategy(
-        ClipRetrievalStrategy
+        ClipEmbeddingStrategy
     )
 
     print(

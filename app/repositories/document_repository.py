@@ -1,15 +1,25 @@
 from abc import ABC, abstractmethod
 
-from app.domain.document import ArtifactType, DocumentRecord, ModelArtifact, ProcessingStatus
+from app.domain.document import (
+    DocumentRecord,
+    ProcessingStatus,
+)
+from app.domain.ocr import OCRResult
 
 
 class DocumentRepository(ABC):
     @abstractmethod
-    def save_document(self, document: DocumentRecord) -> None:
+    def save_document(
+        self,
+        document: DocumentRecord,
+    ) -> None:
         ...
 
     @abstractmethod
-    def get_document(self, document_id: str) -> DocumentRecord | None:
+    def get_document(
+        self,
+        document_id: str,
+    ) -> DocumentRecord | None:
         ...
 
     @abstractmethod
@@ -17,17 +27,6 @@ class DocumentRepository(ABC):
         self,
         checksum: str,
     ) -> DocumentRecord | None:
-        ...
-
-    @abstractmethod
-    def save_artifact(self, artifact: ModelArtifact) -> None:
-        ...
-
-    @abstractmethod
-    def get_artifacts(
-        self,
-        document_id: str,
-    ) -> list[ModelArtifact]:
         ...
 
     @abstractmethod
@@ -40,10 +39,25 @@ class DocumentRepository(ABC):
         ...
 
     @abstractmethod
-    def find_artifacts(
+    def update_ocr(
         self,
-        artifact_type: ArtifactType,
-        model_name: str,
-        document_type: str | None = None,
-    ) -> list[ModelArtifact]:
+        document_id: str,
+        result: OCRResult | None,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    def update_document_type(
+        self,
+        document_id: str,
+        document_type: str,
+    ) -> None:
+        ...
+
+    @abstractmethod
+    def lexical_search(
+        self,
+        query: str,
+        top_k: int = 10,
+    ) -> list[tuple[str, float]]:
         ...

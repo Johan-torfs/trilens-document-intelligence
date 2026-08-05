@@ -26,7 +26,7 @@ export default function HomePage() {
 
   const [uploadFile, setUploadFile] = useState<File | null>(null);
 
-  const [uploadDocumentType, setUploadDocumentType] = useState("invoice");
+  const [uploadDocumentType, setUploadDocumentType] = useState("");
 
   const [uploadResult, setUploadResult] =
     useState<IndexDocumentResponse | null>(null);
@@ -39,7 +39,6 @@ export default function HomePage() {
   const [searchDocumentType, setSearchDocumentType] = useState("");
 
   const [topK, setTopK] = useState(5);
-  const [useHybrid, setUseHybrid] = useState(false);
 
   const [searchResult, setSearchResult] = useState<SearchResponse | null>(null);
 
@@ -121,7 +120,6 @@ export default function HomePage() {
         query: query.trim(),
         top_k: topK,
         document_type: searchDocumentType || null,
-        use_hybrid_ranking: useHybrid,
       });
 
       setSearchResult(response);
@@ -210,13 +208,11 @@ export default function HomePage() {
             query={query}
             documentType={searchDocumentType}
             topK={topK}
-            useHybrid={useHybrid}
             error={searchError}
             isLoading={isSearching}
             onQueryChange={setQuery}
             onDocumentTypeChange={setSearchDocumentType}
             onTopKChange={setTopK}
-            onHybridChange={setUseHybrid}
             onSubmit={handleSearch}
           />
         </section>

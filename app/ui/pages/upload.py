@@ -6,21 +6,30 @@ from app.ui.dependencies import (
 )
 
 
-DOCUMENT_TYPES = {
+DOCUMENT_TYPES: dict[str, str | None] = {
+    "Auto-detect": None,
     "Invoice": "invoice",
     "Purchase order": "purchase_order",
     "Receipt": "receipt",
     "Delivery note": "delivery_note",
     "Application form": "application_form",
     "Identity card": "identity_card",
+    "Contract": "contract",
+    "Letter": "letter",
+    "Report": "report",
+    "Bank statement": "bank_statement",
+    "Pay slip": "pay_slip",
+    "Quotation": "quotation",
+    "Certificate": "certificate",
+    "Tax document": "tax_document",
 }
 
 
 st.title("Document upload")
 
 st.write(
-    "Upload een document om preprocessing, "
-    "CLIP-indexering en BLIP-captioning uit te voeren."
+    "Upload een document om preprocessing "
+    "en SigLIP-indexering uit te voeren."
 )
 
 with st.form("document-upload-form"):
@@ -56,13 +65,11 @@ if submitted:
         pipeline = get_pipeline()
 
         with st.spinner(
-            "Document preprocessen, indexeren en captionen..."
+            "Document preprocessen en indexeren..."
         ):
             outcome = pipeline.index_document(
                 source=source,
-                document_type=DOCUMENT_TYPES[
-                    selected_type_label
-                ],
+                document_type=DOCUMENT_TYPES[selected_type_label],
             )
 
     except Exception as error:
@@ -79,8 +86,8 @@ if submitted:
     )
 
     col2.metric(
-        "Caption",
-        "Ja" if outcome.has_caption else "Nee",
+        "OCR",
+        "Ja" if outcome.has_ocr else "Nee",
     )
 
     col3.metric(
@@ -88,11 +95,19 @@ if submitted:
         f"{outcome.duration_ms:.0f} ms",
     )
 
+    if outcome.classification_confidence is not None:
+        st.info(
+            f"Automatisch gedetecteerd type: **{outcome.document.document_type}** "
+            f"(zekerheid: {outcome.classification_confidence:.0%})"
+        )
+
     if outcome.reused_document:
         st.info(
-            "Dit document was al bekend. Bestaande "
-            "modelartifacts zijn waar mogelijk hergebruikt."
+            "Dit document was al bekend. "
+            "Bestaande vectorindices zijn hergebruikt."
         )
+
+    image_path = outcome.document.stored_path
 
     st.image(
         str(image_path),
@@ -107,32 +122,28 @@ if submitted:
             "document_id": outcome.document.id,
             "document_type": outcome.document.document_type,
             "checksum": outcome.document.checksum,
-            "clip_model": (
-                outcome.embedding_artifact.model_name
-                if outcome.embedding_artifact
+            "indexing_model": (
+                outcome.indexing_result.model_name
+                if outcome.indexing_result
                 else None
             ),
-            "caption_model": (
-                outcome.caption_artifact.model_name
-                if outcome.caption_artifact
+            "page_count": (
+                outcome.indexing_result.page_count
+                if outcome.indexing_result
                 else None
             ),
-            "caption": (
-                outcome.caption_artifact.content
-                if outcome.caption_artifact
-                else None
-            ),
+            "has_ocr": outcome.has_ocr,
         }
     )
 
-    if outcome.embedding_error:
+    if outcome.indexing_error:
         st.error(
-            f"CLIP-indexering mislukte: "
-            f"{outcome.embedding_error}"
+            f"Indexering mislukte: "
+            f"{outcome.indexing_error}"
         )
 
-    if outcome.caption_error:
+    if outcome.ocr_error:
         st.warning(
-            "Het document is geïndexeerd, maar captioning "
-            f"mislukte: {outcome.caption_error}"
+            "Indexering geslaagd, maar OCR mislukte: "
+            f"{outcome.ocr_error}"
         )

@@ -27,7 +27,6 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1)
     top_k: int = Field(default=5, ge=1, le=100)
     document_type: str | None = None
-    use_hybrid_ranking: bool = False
 
 
 class SearchResultResponse(BaseModel):
@@ -35,12 +34,10 @@ class SearchResultResponse(BaseModel):
     rank: int
 
     final_score: float
-    clip_score: float
-    caption_score: float
-    metadata_score: float
-    calibrated_score: float
+    visual_score: float
+    text_score: float
+    fts_score: float
 
-    caption: str | None
     image_url: str
     document_type: str
 
@@ -75,7 +72,6 @@ def search_documents(
     try:
         outcome = pipeline.search(
             query=search_query,
-            use_hybrid_ranking=request.use_hybrid_ranking,
         )
 
     except ValueError as error:
@@ -121,11 +117,9 @@ def _to_result_response(
         document_id=result.document_id,
         rank=result.rank,
         final_score=result.final_score,
-        clip_score=result.clip_score,
-        caption_score=result.caption_score,
-        metadata_score=result.metadata_score,
-        calibrated_score=result.calibrated_score,
-        caption=result.caption,
+        visual_score=result.visual_score,
+        text_score=result.text_score,
+        fts_score=result.fts_score,
         image_url=(
             f"/api/documents/{result.document_id}/image"
         ),

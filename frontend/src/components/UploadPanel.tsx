@@ -123,7 +123,7 @@ export function UploadPanel({
               }}
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm transition focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             >
-              {DOCUMENT_TYPES.slice(1).map(({ value, label }) => (
+              {DOCUMENT_TYPES.map(({ value, label }) => (
                 <option key={value} value={value}>
                   {label}
                 </option>
@@ -176,10 +176,7 @@ export function UploadPanel({
               label="Zoekbaar"
               value={result.is_searchable ? "Ja" : "Nee"}
             />
-            <SmallMetric
-              label="Caption"
-              value={result.has_caption ? "Ja" : "Nee"}
-            />
+            <SmallMetric label="OCR" value={result.has_ocr ? "Ja" : "Nee"} />
             <SmallMetric
               label="Runtime"
               value={`${result.duration_ms.toFixed(0)} ms`}
@@ -188,10 +185,13 @@ export function UploadPanel({
 
           <dl className="mt-4 space-y-2.5 rounded-xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200">
             <Detail label="Document-ID" value={result.document_id} />
-            <Detail
-              label="Caption"
-              value={result.caption ?? "Niet beschikbaar"}
-            />
+            <Detail label="Type" value={result.document_type} />
+            {result.classification_confidence !== null && (
+              <Detail
+                label="Zekerheid detectie"
+                value={`${(result.classification_confidence * 100).toFixed(0)}%`}
+              />
+            )}
           </dl>
 
           {result.reused_document && (

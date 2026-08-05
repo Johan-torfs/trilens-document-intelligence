@@ -4,10 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.api.dependencies import get_pipeline
 from app.api.main import create_app
-from app.domain.document import (
-    DocumentMetadata,
-    DocumentRecord,
-)
+from app.domain.document import DocumentRecord
 from app.services.analysis_service import (
     AnalysisDisabledError,
     AnalysisResult,
@@ -27,9 +24,6 @@ def make_document() -> DocumentRecord:
         height=1000,
         mime_type="image/png",
         document_type="invoice",
-        metadata=DocumentMetadata(
-            document_type="invoice",
-        ),
     )
 
 
@@ -42,7 +36,6 @@ def test_analysis_returns_model_result() -> None:
             question="Is there a signature?",
             analysis=AnalysisResult(
                 text="A signature may be visible.",
-                source="open_flamingo",
                 model_name="fake-open-flamingo",
                 model_version="version-1",
                 duration_ms=1200.0,
@@ -71,8 +64,6 @@ def test_analysis_returns_model_result() -> None:
         "document_id": "document-1",
         "question": "Is there a signature?",
         "text": "A signature may be visible.",
-        "source": "open_flamingo",
-        "used_fallback": False,
         "model_name": "fake-open-flamingo",
         "model_version": "version-1",
         "model_duration_ms": 1200.0,
@@ -83,42 +74,6 @@ def test_analysis_returns_model_result() -> None:
         document_id="document-1",
         question="Is there a signature?",
     )
-
-def test_analysis_exposes_caption_fallback() -> None:
-    pipeline = MagicMock()
-
-    pipeline.analyze_document.return_value = (
-        AnalyzeDocumentOutcome(
-            document=make_document(),
-            question="Describe this document.",
-            analysis=AnalysisResult(
-                text="an invoice with several rows",
-                source="caption_fallback",
-                model_name="fake-blip",
-                model_version="version-1",
-                duration_ms=30.0,
-            ),
-            duration_ms=50.0,
-        )
-    )
-
-    app = create_app()
-    app.dependency_overrides[get_pipeline] = (
-        lambda: pipeline
-    )
-
-    client = TestClient(app)
-
-    response = client.post(
-        "/api/documents/document-1/analysis",
-        json={
-            "question": "Describe this document.",
-        },
-    )
-
-    assert response.status_code == 200
-    assert response.json()["source"] == "caption_fallback"
-    assert response.json()["used_fallback"] is True
 
 def test_analysis_returns_503_when_disabled() -> None:
     pipeline = MagicMock()

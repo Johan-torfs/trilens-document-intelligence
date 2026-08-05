@@ -1,191 +1,274 @@
 # TriLens Document Intelligence
 
-TriLens is a local multimodal document intelligence application for visual document indexing, semantic retrieval, automatic captioning and experimental document analysis.
+TriLens is a local multimodal document intelligence system. Upload document images or PDFs, search them with natural language, and run experimental analysis — all without sending data to an external service.
 
-The application combines:
+**Stack at a glance:**
 
-- **CLIP** for image-text retrieval;
-- **BLIP** for automatic document captions;
-- **OpenFlamingo** for optional query-driven document analysis;
-- **FastAPI** as the backend API;
-- **Next.js** as the primary user interface;
-- **Streamlit** as the original prototype interface;
-- **SQLite and NumPy** for local metadata and embedding storage.
+| Layer               | Technology                             |
+| ------------------- | -------------------------------------- |
+| Visual embeddings   | SigLIP (via Hugging Face Transformers) |
+| Text embeddings     | Sentence Transformers                  |
+| OCR                 | DocTR                                  |
+| Vector store        | Qdrant                                 |
+| Metadata store      | SQLite                                 |
+| Analysis (optional) | OpenFlamingo                           |
+| Backend API         | FastAPI                                |
+| Frontend            | Next.js                                |
+| Prototype UI        | Streamlit                              |
+
+Search uses **hybrid ranking**: SigLIP similarity, sentence-level text similarity and full-text score are combined into a single final score.
 
 > TriLens is a portfolio and learning project. Model output may be inaccurate and must not be used as legal, financial or identity advice.
 
 ---
 
-## Demo
-
-The primary interface consists of a single dashboard:
-
-1. upload a document image;
-2. let CLIP and BLIP process the document;
-3. search documents with natural language;
-4. compare CLIP and hybrid ranking scores;
-5. run experimental analysis directly on a search result.
+## Screenshots
 
 ### Unified dashboard
 
-The primary Next.js interface combines document upload and semantic search in a single dashboard.
+The Next.js interface combines document upload and semantic search on a single page.
 
 ![TriLens dashboard with upload and search forms](docs/screenshots/01-dashboard.png)
 
-### Semantic document retrieval
+### Search results
 
-Search results include the document image, BLIP caption and individual ranking signals for CLIP, caption similarity and metadata similarity.
+Results include the document image, document type and individual ranking signals.
 
 ![TriLens hybrid document search results](docs/screenshots/02-search-results.png)
 
 ### Inline document analysis
 
-A selected result can be analysed directly without navigating to a separate page. OpenFlamingo is optional, and TriLens can expose a BLIP caption fallback when analysis is unavailable.
+A result can be analysed directly on the same page. OpenFlamingo is optional and can be disabled.
 
 ![TriLens inline document analysis](docs/screenshots/03-inline-analysis.png)
 
-### Document indexing
+### Upload result
 
-Uploaded images are validated, preprocessed, embedded with CLIP and captioned with BLIP.
+Uploaded documents show embedding model, OCR model and processing outcome.
 
 ![TriLens document indexing result](docs/screenshots/04-upload-result.png)
 
 ---
 
-## Problem statement
+## Installation and setup
 
-Document search engines often rely on file names, manually entered metadata or OCR text.
+### Prerequisites
 
-TriLens explores a different approach: searching documents based on their visual and semantic characteristics.
+- Python 3.12
+- Node.js 20 or newer and npm
+- Docker (for Qdrant)
 
-Example queries:
+### 1 — Clone and create a virtual environment
 
-```text
-invoice with several product rows
-store receipt
-form with multiple input fields
-document containing a signature
-identity document
+```bash
+git clone https://github.com/Johan-torfs/trilens-document-intelligence.git
+cd trilens-document-intelligence
+python -m venv .venv
+source .venv/bin/activate
 ```
 
-This allows documents to be retrieved even when the exact words from the query do not literally appear in the document.
+### 2 — Install Python dependencies
 
----
-
-## Architecture
-
-```text
-Next.js dashboard
-        │
-        │ HTTP
-        ▼
-FastAPI API
-        │
-        ▼
-DocumentIntelligencePipeline
-        │
-        ├── preprocessing
-        │     ├── image validation
-        │     ├── EXIF correction
-        │     ├── RGB conversion
-        │     └── resizing
-        │
-        ├── CLIP retrieval
-        │     ├── image embeddings
-        │     ├── text embeddings
-        │     └── cosine similarity
-        │
-        ├── BLIP captioning
-        │
-        ├── hybrid reranking
-        │
-        └── optional OpenFlamingo analysis
-              └── BLIP caption fallback
-        │
-        ▼
-SQLite metadata + NumPy embeddings
+```bash
+pip install -e .
 ```
 
-The application uses a shared application pipeline. FastAPI and Streamlit are thin adapters around the same services and domain logic.
+PyTorch is not on PyPI with a universal wheel. If the default `pip install` does not pull a matching build for your hardware, install it manually first:
+
+```bash
+# CPU-only example
+pip install torch==2.2.* torchvision==0.17.* --index-url https://download.pytorch.org/whl/cpu
+```
+
+See [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally) for the correct index URL for your platform and CUDA version.
+
+OpenFlamingo is not on PyPI. Install it from source if you want experimental analysis:
+
+```bash
+pip install git+https://github.com/mlfoundations/open_flamingo.git@<commit>
+```
+
+The application runs fully without it.
+
+### 3 — Install the frontend
+
+```bash
+cd frontend
+npm ci
+cd ..
+```
+
+### 4 — Start Qdrant
+
+```bash
+docker compose up -d
+```
+
+This starts Qdrant on `http://localhost:6333` using a named Docker volume for persistence.
+
+### 5 — Configure environment variables
+
+```bash
+cp .env.example .env
+cp frontend/.env.example frontend/.env.local
+```
+
+The defaults work out of the box for local development. The key variables:
+
+**`.env`**
+
+```env
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=trilens_vectors_v1
+TRILENS_OPEN_FLAMINGO_ENABLED=false
+TRILENS_CORS_ORIGINS=http://localhost:3000
+```
+
+**`frontend/.env.local`**
+
+```env
+NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
+```
+
+### 6 — Run the backend
+
+```bash
+source .venv/bin/activate
+uvicorn app.api.main:app --reload
+```
+
+API available at `http://127.0.0.1:8000`  
+Interactive docs at `http://127.0.0.1:8000/docs`
+
+### 7 — Run the frontend
+
+In a second terminal:
+
+```bash
+cd frontend
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+### Streamlit prototype (optional)
+
+The original prototype UI is still available. Streamlit is not in the default dependencies — install it first:
+
+```bash
+pip install streamlit
+streamlit run streamlit_app.py
+```
 
 ---
 
-## CLIP, BLIP and OpenFlamingo
+## How it works
 
-### CLIP
+### Document indexing pipeline
 
-CLIP converts images and text into vectors in a shared embedding space.
+When a document is uploaded:
 
-TriLens uses CLIP for:
+1. **Validation** — MIME type, extension and image integrity are checked.
+2. **Preparation** — EXIF orientation is corrected, the image is converted to RGB and resized.
+3. **Visual embedding** — SigLIP encodes the image into a vector and stores it in Qdrant.
+4. **Text embedding** — a Sentence Transformer encodes document metadata for text-based retrieval.
+5. **OCR** — DocTR extracts document text, stored in SQLite.
+6. **Classification** — if no document type is provided, the type is inferred automatically (see below).
+7. **Deduplication** — a SHA-256 checksum prevents re-indexing the same file.
 
-- indexing document images;
-- encoding search queries;
-- computing cosine similarity;
-- ranking top-k documents.
+PDF documents are split into individual pages; each page is embedded and stored separately.
 
-CLIP is not an OCR system. It is primarily suited for visual and semantic similarity.
+### Document classification
 
-### BLIP
+When no document type is selected at upload time, TriLens classifies the document automatically using two signals:
 
-BLIP generates a short description of a document image.
+- **Visual (SigLIP zero-shot)** — the document image is embedded with SigLIP and compared against a precomputed embedding for each candidate type's text prompt (e.g. "a business invoice"). Cosine similarities are softmax-normalised across all types.
+- **Lexical** — the OCR text is scanned for type-specific keywords (e.g. `invoice no`, `total due`). Hit counts are softmax-normalised across all types.
 
-The caption is:
+The two signals are fused with a fixed weight:
 
-- stored as a model artifact;
-- displayed in search results;
-- used as an additional signal in hybrid ranking;
-- used as a fallback when OpenFlamingo cannot provide analysis.
+$$\text{score}_{\text{type}} = 0.60 \times \text{visual}_{\text{type}} + 0.40 \times \text{lexical}_{\text{type}}$$
 
-### OpenFlamingo
+The type with the highest combined score is assigned. If the winning score is below the confidence threshold (default 0.40), the document is labelled `unknown`.
 
-OpenFlamingo is used experimentally to answer a question about a single selected document.
+The user can always override the auto-detected type by selecting one from the dropdown before uploading.
 
-OpenFlamingo:
+**Supported types:** `invoice`, `purchase_order`, `receipt`, `delivery_note`, `application_form`, `identity_card`, `contract`, `letter`, `report`, `bank_statement`, `pay_slip`, `quotation`, `certificate`, `tax_document`.
 
-- is disabled by default;
-- is lazily loaded;
-- can be very slow on CPU;
-- requires a large amount of memory;
-- may misinterpret or hallucinate visual details.
+### Hybrid search
 
-On systems with approximately 8 GB of GPU memory, the current configuration may not fit entirely in GPU memory.
+A query goes through the following steps:
+
+1. SigLIP encodes the query text and retrieves a candidate pool from Qdrant (3× the requested top-k, capped at 100).
+2. A Sentence Transformer computes text similarity between the query and indexed document text.
+3. Full-text search provides an additional FTS signal.
+4. The final score is a weighted combination:
+
+$$\text{score} = 0.60 \times \text{visual} + 0.30 \times \text{text} + 0.10 \times \text{fts}$$
+
+When no text or FTS signal is available for a candidate, the final score equals the visual score.
+
+5. Candidates are re-ranked by final score and the top-k are returned.
+
+### Optional analysis
+
+When OpenFlamingo is enabled, a selected search result can be queried with a natural language question. The model runs locally. It is slow on CPU and may produce incorrect or hallucinated output.
+
+If OpenFlamingo is disabled or unavailable, a fallback answer is returned from stored OCR text.
+
+### Storage
+
+| Store            | Contents                                                       |
+| ---------------- | -------------------------------------------------------------- |
+| SQLite           | Document records, processing status, OCR text, model artifacts |
+| Qdrant           | Visual and text embedding vectors                              |
+| Local filesystem | Uploaded document images                                       |
+
+Runtime files live under `data/runtime/` and are not committed to Git.
 
 ---
 
-## Features
+## API reference
 
-### Document indexing
+| Method | Endpoint                       | Description                        |
+| ------ | ------------------------------ | ---------------------------------- |
+| `GET`  | `/api/health`                  | Returns API status                 |
+| `POST` | `/api/documents`               | Uploads and indexes a document     |
+| `POST` | `/api/search`                  | Searches indexed documents         |
+| `GET`  | `/api/documents/{id}/image`    | Returns the stored document image  |
+| `POST` | `/api/documents/{id}/analysis` | Runs analysis on a single document |
 
-- PNG, JPG and JPEG files;
-- file and image validation;
-- SHA-256 checksum;
-- detection of previously indexed documents;
-- preprocessing;
-- CLIP image embedding;
-- BLIP caption;
-- partial recovery when one model step fails;
-- local storage of metadata and artifacts.
+### Search request
 
-### Search
+```json
+{
+  "query": "invoice with several product rows",
+  "top_k": 5,
+  "document_type": "invoice"
+}
+```
 
-- natural language queries;
-- top-k ranking;
-- filtering by document type;
-- CLIP baseline;
-- optional hybrid ranking;
-- individual scores for:
-  - CLIP;
-  - caption similarity;
-  - metadata similarity;
-  - final ranking.
+`document_type` is optional. If omitted the type is inferred automatically. Supported values: `invoice`, `purchase_order`, `receipt`, `delivery_note`, `application_form`, `identity_card`, `contract`, `letter`, `report`, `bank_statement`, `pay_slip`, `quotation`, `certificate`, `tax_document`.
 
-### Analysis
+### Search response (abbreviated)
 
-- query-driven analysis of a single document;
-- optional OpenFlamingo execution;
-- BLIP caption fallback;
-- model name, source and runtime in the response;
-- warning for unreliable model output.
+```json
+{
+  "ranking_mode": "hybrid",
+  "results": [
+    {
+      "document_id": "...",
+      "rank": 1,
+      "final_score": 0.84,
+      "visual_score": 0.79,
+      "text_score": 0.91,
+      "fts_score": 0.6,
+      "document_type": "invoice",
+      "image_url": "/api/documents/.../image"
+    }
+  ]
+}
+```
 
 ---
 
@@ -194,483 +277,94 @@ On systems with approximately 8 GB of GPU memory, the current configuration may 
 ```text
 trilens-document-intelligence/
 ├── app/
-│   ├── api/
-│   │   ├── routes/
-│   │   ├── dependencies.py
-│   │   └── main.py
-│   ├── domain/
-│   ├── preprocessing/
-│   ├── repositories/
-│   ├── services/
-│   ├── strategies/
-│   ├── ui/
-│   └── bootstrap.py
-├── frontend/
-│   ├── src/
-│   │   ├── app/
-│   │   └── lib/
-│   ├── package.json
-│   └── package-lock.json
-├── tests/
+│   ├── api/            # FastAPI routes and dependencies
+│   ├── domain/         # Pydantic domain models
+│   ├── preprocessing/  # Image validation, transforms, pipeline
+│   ├── repositories/   # SQLite and Qdrant adapters
+│   ├── services/       # Application services and pipeline
+│   ├── strategies/     # Model strategy implementations
+│   ├── ui/             # Streamlit pages
+│   └── bootstrap.py    # Dependency wiring
+├── frontend/           # Next.js interface
+├── tests/              # Python test suite
+├── scripts/            # Dataset download utilities
 ├── data/
-├── docs/
-├── streamlit_app.py
+│   ├── external/       # Downloaded dataset images (not in Git)
+│   └── runtime/        # SQLite, Qdrant uploads (not in Git)
+├── docs/screenshots/
+├── docker-compose.yaml
 ├── pyproject.toml
-└── README.md
+└── requirements.txt
 ```
-
-Runtime files, uploads, databases, embeddings and model caches do not belong in Git.
-
----
-
-## Requirements
-
-Recommended local environment:
-
-- Python 3.12;
-- Node.js 20 or newer;
-- npm;
-- sufficient free disk space for model files;
-- optionally a CUDA-compatible GPU.
-
-OpenFlamingo requires several gigabytes of model files and is not required for upload, captioning or retrieval.
-
----
-
-## Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/Johan-torfs/trilens-document-intelligence.git
-cd trilens-document-intelligence
-```
-
-Create a Python virtual environment:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-```
-
-Install the Python dependencies using the project installation method:
-
-```bash
-pip install -e .
-```
-
-If the project does not yet have an installable dependency configuration in `pyproject.toml`, use the provided requirements file:
-
-```bash
-pip install -r requirements.txt
-```
-
-Install the frontend:
-
-```bash
-cd frontend
-npm ci
-cd ..
-```
-
----
-
-## Configuration
-
-Copy the backend configuration:
-
-```bash
-cp .env.example .env
-```
-
-Copy the frontend configuration:
-
-```bash
-cp frontend/.env.example frontend/.env.local
-```
-
-### Backend variables
-
-```env
-TRILENS_OPEN_FLAMINGO_ENABLED=false
-TRILENS_OPEN_FLAMINGO_DEVICE=cpu
-TRILENS_CORS_ORIGINS=http://localhost:3000
-```
-
-### Frontend variables
-
-```env
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8000
-```
-
-OpenFlamingo remains disabled for the default MVP:
-
-```env
-TRILENS_OPEN_FLAMINGO_ENABLED=false
-```
-
-Enable experimental CPU analysis:
-
-```env
-TRILENS_OPEN_FLAMINGO_ENABLED=true
-TRILENS_OPEN_FLAMINGO_DEVICE=cpu
-```
-
----
-
-## Running the application
-
-### FastAPI
-
-Start from the project root:
-
-```bash
-source .venv/bin/activate
-uvicorn app.api.main:app --reload
-```
-
-The API is available at:
-
-```text
-http://127.0.0.1:8000
-```
-
-Interactive API documentation:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-Health check:
-
-```text
-GET http://127.0.0.1:8000/api/health
-```
-
-### Next.js
-
-Start in a second terminal:
-
-```bash
-cd frontend
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-### Streamlit prototype
-
-The original prototype interface remains available:
-
-```bash
-streamlit run streamlit_app.py
-```
-
-The Next.js interface is the primary portfolio frontend.
-
----
-
-## API endpoints
-
-| Method | Endpoint                                | Description                    |
-| ------ | --------------------------------------- | ------------------------------ |
-| `GET`  | `/api/health`                           | Checks the API status          |
-| `POST` | `/api/documents`                        | Uploads and indexes a document |
-| `POST` | `/api/search`                           | Searches documents             |
-| `GET`  | `/api/documents/{document_id}/image`    | Returns the document image     |
-| `POST` | `/api/documents/{document_id}/analysis` | Analyses a selected document   |
-
----
-
-## Example: search
-
-Request:
-
-```json
-{
-  "query": "invoice with several product rows",
-  "top_k": 5,
-  "document_type": "invoice",
-  "use_hybrid_ranking": true
-}
-```
-
-Simplified response:
-
-```json
-{
-  "ranking_mode": "hybrid",
-  "results": [
-    {
-      "document_id": "example-document-id",
-      "rank": 1,
-      "final_score": 0.84,
-      "clip_score": 0.79,
-      "caption_score": 0.96,
-      "metadata_score": 1.0,
-      "caption": "an invoice containing multiple product rows",
-      "image_url": "/api/documents/example-document-id/image",
-      "document_type": "invoice"
-    }
-  ]
-}
-```
-
----
-
-## Dataset
-
-TriLens uses a small external document dataset for local development and model comparison.
-
-The dataset contains:
-
-- 10 CORD receipt images;
-- 10 FUNSD scanned forms;
-- 30 DocLayNet pages:
-  - financial reports;
-  - scientific articles;
-  - laws and regulations;
-  - government tenders;
-  - manuals;
-  - patents.
-
-External images are not committed to Git.
-
-To rebuild the dataset:
-
-1. Download the FUNSD archive from:
-
-   ```text
-   https://guillaumejaume.github.io/FUNSD/download
-   ```
-
-2. Save it locally, for example as `~/Downloads/dataset.zip`.
-
-3. Run:
-
-   ```bash
-   python -m scripts.dataset.fetch_external_datasets \
-     --funsd-archive ~/Downloads/dataset.zip
-   ```
-
-CORD and DocLayNet are fetched automatically by the script.
-
-The resulting files are stored under:
-
-```text
-data/external/
-├── cord/
-├── funsd/
-└── doclaynet/
-```
-
-Dataset-specific licences and usage terms remain applicable.
 
 ---
 
 ## Tests
 
-Run all Python tests:
-
 ```bash
-python -m pytest
-```
+# Python tests
+.venv/bin/pytest
 
-Run the frontend checks:
-
-```bash
+# Frontend lint and build
 cd frontend
 npm run lint
 npm run build
 ```
 
-The test suite includes tests for:
+Model-heavy integrations are mocked; the test suite does not download model weights.
 
-- image validation;
-- preprocessing;
-- checksums;
-- repositories;
-- cosine similarity;
-- ranking;
-- CLIP service integration;
-- BLIP captioning;
-- OpenFlamingo fallback;
-- application pipeline;
-- FastAPI endpoints.
+---
 
-Model-dependent tests use mocks where possible. CI should not download large model checkpoints.
+## Dataset
+
+A small dataset of external document images is used for local development and evaluation. The images are not committed to Git.
+
+| Source    | Count | Document types                                      |
+| --------- | ----- | --------------------------------------------------- |
+| CORD      | 10    | Receipts                                            |
+| FUNSD     | 10    | Scanned forms                                       |
+| DocLayNet | 30    | Financial reports, articles, laws, manuals, patents |
+
+To download:
+
+```bash
+# FUNSD requires a manual download first:
+# https://guillaumejaume.github.io/FUNSD/download
+python -m scripts.dataset.fetch_external_datasets \
+  --funsd-archive ~/Downloads/dataset.zip
+```
+
+CORD and DocLayNet are fetched automatically. Dataset-specific licence terms apply.
 
 ---
 
 ## Continuous integration
 
-GitHub Actions validates every pull request and every push to `main`.
+GitHub Actions runs on every push to `main` and on pull requests:
 
-The CI workflow runs:
+- Python test suite (Python 3.12)
+- `npm ci` and Next.js lint
+- Next.js production build
 
-- the complete Python test suite on Python 3.12;
-- frontend dependency installation through `npm ci`;
-- Next.js linting;
-- a production Next.js build.
-
-Model downloads are disabled in CI. Tests use mocks for heavyweight model integrations such as CLIP, BLIP and OpenFlamingo.
-
----
-
-## Privacy
-
-TriLens is designed as a local portfolio and research project.
-
-Important limitations:
-
-- use only synthetic, public or properly anonymised data;
-- do not commit personal data;
-- do not commit real identity documents;
-- uploads are processed locally;
-- the application does not automatically upload documents to an external service;
-- logging should not contain image content or sensitive document text;
-- model output may be incorrect or hallucinated;
-- results are not legal, financial or identity advice.
-
-Always check the licence terms of external datasets before publishing or redistributing images.
+Model downloads are disabled in CI.
 
 ---
 
 ## Known limitations
 
-- The dataset is small.
-- There is no formal retrieval benchmark yet.
-- CLIP does not read exact document text like an OCR engine.
-- Retrieval quality varies by document category and query phrasing.
-- BLIP captions are general and sometimes miss small document details.
-- OpenFlamingo can hallucinate or generate repetitive output.
-- OpenFlamingo is slow on CPU.
-- The current OpenFlamingo configuration may exceed a GPU with 8 GB of memory.
-- There is no authentication or user management.
-- There is no rate limiting.
-- Processing is synchronous.
-- Only document images are supported.
-- The system is not intended for production use.
+- The evaluation dataset is small; retrieval quality varies by document type and query phrasing.
+- SigLIP is not an OCR system — queries targeting exact document text may not match as expected.
+- OpenFlamingo is slow on CPU and may hallucinate or repeat output.
+- The current OpenFlamingo configuration may exceed 8 GB of GPU memory.
+- Processing is synchronous; there is no background job queue.
+- No authentication or rate limiting.
+- Not intended for production use.
 
----
+### Classification
 
-## Evaluation
+- **Scores are uncalibrated.** Combined classification scores rarely exceed 40% in practice. The `confidence` value in the API response reflects the raw fused score, not a calibrated probability.
+- **English only.** The lexical scorer matches against English keywords. Non-English document text produces no lexical signal; classification falls back to visual scoring alone.
 
-A formal retrieval benchmark is not yet part of the first MVP.
+### Search scoring
 
-A future evaluation will use a fixed dataset and at least ten manually labelled queries, including:
-
-- Recall@1;
-- Recall@3;
-- average query time;
-- average indexing time;
-- qualitative error analysis.
-
-The current dataset is primarily intended to demonstrate the end-to-end architecture.
-
----
-
-## Roadmap
-
-### Next quality phase
-
-- research additional safe document datasets;
-- evaluate retrieval quality;
-- compare and update models;
-- improve latency and memory usage;
-- research OpenFlamingo prompts and checkpoints;
-- refine CLIP and caption reranking.
-
-### Possible later extensions
-
-- automatic document classification;
-- OCR and hybrid text-image retrieval;
-- support for PDF and Office documents;
-- multi-page documents;
-- asynchronous indexing;
-- batch uploads;
-- Docker and persistent model cache volumes;
-- extended observability;
-- production authentication and rate limiting.
-
----
-
-## Technical decisions
-
-### Why local storage?
-
-SQLite and NumPy keep the MVP:
-
-- simple;
-- inspectable;
-- local;
-- reproducible;
-- free of external infrastructure.
-
-### Why an application pipeline?
-
-`DocumentIntelligencePipeline` orchestrates the specialised services without duplicating model, storage or UI logic.
-
-This allows FastAPI and Streamlit to use the same core functionality.
-
-### Why two frontends?
-
-Streamlit was used to quickly validate the ML flow.
-
-A separate FastAPI and Next.js architecture was then added to demonstrate a more realistic application design.
-
----
-
-## Status
-
-**MVP 1**
-
-Working:
-
-- document upload;
-- preprocessing;
-- CLIP indexing;
-- BLIP captioning;
-- semantic retrieval;
-- hybrid ranking;
-- optional OpenFlamingo analysis;
-- caption fallback;
-- local storage;
-- FastAPI;
-- Next.js dashboard;
-- Streamlit prototype;
-- automated tests.
-
-Planned after MVP 1:
-
-- formal evaluation;
-- additional datasets;
-- model quality improvement;
-- performance optimisation;
-- automatic classification;
-- support for other document formats;
-- OCR engine integration for content-based document analysis.
-
----
-
-## Licence
-
-The original source code and project documentation of TriLens Document Intelligence are made available under the MIT License.
-
-See [LICENSE](LICENSE) for the full licence text.
-
-This licence does not automatically apply to:
-
-- external model weights;
-- external datasets;
-- images from external datasets;
-- software dependencies;
-- third-party code or assets.
-
-CLIP, BLIP and OpenFlamingo models and their checkpoints retain their own licence terms. The same applies to Hugging Face datasets and other public data sources.
-
-Users and contributors are responsible for checking the applicable model, dataset and dependency licences before redistributing, publishing or commercially using any files.
+- **Weights are placeholders.** The hybrid ranking weights (0.60 visual / 0.30 text / 0.10 FTS) and score calibration thresholds have not been empirically validated. Final scores should not be treated as absolute confidence values.

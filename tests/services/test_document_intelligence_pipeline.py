@@ -7,12 +7,10 @@ import pytest
 from PIL import Image
 
 from app.domain.document import (
-    ArtifactType,
-    DocumentMetadata,
     DocumentRecord,
-    ModelArtifact,
     ProcessingStatus,
 )
+from app.domain.ocr import OCRPageResult, OCRResult
 from app.domain.prepared_document import (
     DocumentPage,
     DocumentSource,
@@ -20,26 +18,28 @@ from app.domain.prepared_document import (
 )
 from app.preprocessing.pipeline import PreprocessingResult
 from app.repositories.document_repository import DocumentRepository
-from app.services.document_caption_service import (
-    DocumentCaptionService,
-)
-from app.services.document_intelligence_pipeline import (
-    DocumentIntelligencePipeline,
-)
-from app.services.document_preparation_service import (
-    DocumentPreparationService,
-)
-from app.services.indexing_service import IndexingService
-from app.domain.search import SearchQuery, SearchResult
-from app.services.document_search_service import (
-    DocumentSearchService,
-)
-from app.services.retrieval_service import RetrievalService
 from app.services.analysis_service import (
     AnalysisResult,
     AnalysisService,
 )
+from app.services.document_intelligence_pipeline import (
+    DocumentIntelligencePipeline,
+)
+from app.services.document_classification_service import (
+    DocumentClassificationService,
+)
+from app.domain.classification import ClassificationResult
 from app.services.document_ocr_service import DocumentOCRService
+from app.services.document_preparation_service import (
+    DocumentPreparationService,
+)
+from app.services.document_search_service import (
+    DocumentSearchService,
+)
+from app.services.indexing_service import IndexingResult, IndexingService
+from app.services.retrieval_service import RetrievalService
+from app.services.score_calibration import LinearScoreCalibrator
+from app.domain.search import SearchQuery, SearchResult
 
 
 def make_png_bytes() -> bytes:
@@ -94,42 +94,35 @@ def make_preprocessing_result(
     )
 
 
-def make_embedding_artifact(
+def make_indexing_result(
     document_id: str = "document-1",
-) -> ModelArtifact:
-    return ModelArtifact(
-        id="embedding-1",
+) -> IndexingResult:
+    return IndexingResult(
         document_id=document_id,
-        artifact_type=ArtifactType.IMAGE_EMBEDDING,
-        model_name="fake-clip",
-        storage_path="data/vectors/embedding-1.npy",
+        page_count=1,
         dimensions=512,
+        model_name="fake-clip",
+        model_version=None,
+        reused_existing=False,
     )
 
 
-def make_caption_artifact(
+def make_ocr_result(
     document_id: str = "document-1",
-) -> ModelArtifact:
-    return ModelArtifact(
-        id="caption-1",
-        document_id=document_id,
-        artifact_type=ArtifactType.CAPTION,
-        model_name="fake-blip",
-        model_version="version-1",
-        content="an invoice with several product rows",
-    )
-
-
-def make_ocr_artifact(
-    document_id: str = "document-1",
-) -> ModelArtifact:
-    return ModelArtifact(
-        id="ocr-1",
-        document_id=document_id,
-        artifact_type=ArtifactType.OCR,
+) -> OCRResult:
+    return OCRResult(
+        text="Invoice text",
+        pages=[
+            OCRPageResult(
+                page_number=1,
+                text="Invoice text",
+                words=[],
+                mean_confidence=0.9,
+            )
+        ],
+        mean_confidence=0.9,
         model_name="fake-doctr",
         model_version="version-1",
-        content='{"text":"Invoice","pages":[],"mean_confidence":0.9}',
     )
 
 
@@ -137,7 +130,6 @@ def make_pipeline(
     tmp_path: Path | None = None,
 ) -> tuple[
     DocumentIntelligencePipeline,
-    MagicMock,
     MagicMock,
     MagicMock,
     MagicMock,
@@ -164,10 +156,6 @@ def make_pipeline(
         IndexingService,
         instance=True,
     )
-    caption_service = create_autospec(
-        DocumentCaptionService,
-        instance=True,
-    )
     document_search_service = create_autospec(
         DocumentSearchService,
         instance=True,
@@ -186,8 +174,6 @@ def make_pipeline(
     )
 
     indexing_service.model_name = "fake-clip"
-    caption_service.model_name = "fake-blip"
-    caption_service.model_version = "version-1"
     ocr_service.model_name = "fake-doctr"
     ocr_service.model_version = "version-1"
 
@@ -196,11 +182,14 @@ def make_pipeline(
         preparation_service=preparation_service,
         upload_dir=upload_dir,
         indexing_service=indexing_service,
-        caption_service=caption_service,
         document_search_service=document_search_service,
         retrieval_service=retrieval_service,
         analysis_service=analysis_service,
         ocr_service=ocr_service,
+        score_calibrator=LinearScoreCalibrator(
+            noise_floor=0.04,
+            ceiling=0.28,
+        ),
     )
 
     return (
@@ -208,7 +197,6 @@ def make_pipeline(
         repository,
         preparation_service,
         indexing_service,
-        caption_service,
         document_search_service,
         retrieval_service,
         analysis_service,
@@ -224,7 +212,6 @@ def test_index_document_image_runs_complete_pipeline(
         repository,
         preparation_service,
         indexing_service,
-        caption_service,
         _,
         _,
         _,
@@ -233,14 +220,13 @@ def test_index_document_image_runs_complete_pipeline(
 
     source = make_image_source()
     page = make_page(1)
-    embedding = make_embedding_artifact()
-    caption = make_caption_artifact()
-    ocr = make_ocr_artifact()
+    indexing_result = make_indexing_result()
+    ocr_result = make_ocr_result()
 
     repository.get_document_by_checksum.return_value = None
-    indexing_service.index_pages.return_value = embedding
-    caption_service.caption_document.return_value = caption
-    ocr_service.process_document.return_value = ocr
+    repository.get_document.return_value = None
+    indexing_service.index_pages.return_value = indexing_result
+    ocr_service.process_document.return_value = ocr_result
 
     prepared = PreparedDocument(source=source, pages=[page])
     preprocessing = [make_preprocessing_result(page)]
@@ -273,10 +259,10 @@ def test_index_document_image_runs_complete_pipeline(
     assert saved_doc.mime_type == "image/png"
     assert saved_doc.page_count == 1
 
-    assert outcome.embedding_artifact == embedding
-    assert outcome.caption_artifact == caption
+    assert outcome.indexing_result == indexing_result
+    assert outcome.ocr_result == ocr_result
     assert outcome.is_searchable is True
-    assert outcome.has_caption is True
+    assert outcome.has_ocr is True
     assert outcome.fully_succeeded is True
     assert outcome.reused_document is False
     assert outcome.duration_ms >= 0
@@ -284,9 +270,9 @@ def test_index_document_image_runs_complete_pipeline(
     status_calls = (
         repository.update_processing_status.call_args_list
     )
-    assert status_calls[0].args[1] == ProcessingStatus.PROCESSING
-    assert status_calls[1].args[1] == ProcessingStatus.COMPLETED
-    assert status_calls[1].args[2] is None
+    assert status_calls[0].kwargs["status"] == ProcessingStatus.PROCESSING
+    assert status_calls[1].kwargs["status"] == ProcessingStatus.COMPLETED
+    assert status_calls[1].kwargs.get("error") is None
 
 
 def test_index_document_pdf_processes_all_pages(
@@ -297,7 +283,6 @@ def test_index_document_pdf_processes_all_pages(
         repository,
         preparation_service,
         indexing_service,
-        _caption_service,
         _,
         _,
         _,
@@ -306,12 +291,13 @@ def test_index_document_pdf_processes_all_pages(
 
     source = make_pdf_source(page_count=3)
     pages = [make_page(1), make_page(2), make_page(3)]
-    embedding = make_embedding_artifact()
-    ocr = make_ocr_artifact()
+    indexing_result = make_indexing_result()
+    ocr_result = make_ocr_result()
 
     repository.get_document_by_checksum.return_value = None
-    indexing_service.index_pages.return_value = embedding
-    ocr_service.process_document.return_value = ocr
+    repository.get_document.return_value = None
+    indexing_service.index_pages.return_value = indexing_result
+    ocr_service.process_document.return_value = ocr_result
 
     prepared = PreparedDocument(source=source, pages=pages)
     preprocessing = [make_preprocessing_result(p) for p in pages]
@@ -319,29 +305,7 @@ def test_index_document_pdf_processes_all_pages(
     preparation_service.prepare.return_value = prepared
     preparation_service.preprocess_pages.return_value = preprocessing
 
-    # Use pipeline without caption service for simplicity
-    pipeline_no_caption = DocumentIntelligencePipeline(
-        document_repository=repository,
-        preparation_service=preparation_service,
-        upload_dir=tmp_path / "uploads",
-        indexing_service=indexing_service,
-        caption_service=None,
-        document_search_service=create_autospec(
-            DocumentSearchService, instance=True
-        ),
-        retrieval_service=create_autospec(
-            RetrievalService, instance=True
-        ),
-        analysis_service=create_autospec(
-            AnalysisService, instance=True
-        ),
-        ocr_service=ocr_service,
-    )
-    indexing_service.model_name = "fake-clip"
-    ocr_service.model_name = "fake-doctr"
-    ocr_service.model_version = "version-1"
-
-    outcome = pipeline_no_caption.index_document(
+    outcome = pipeline.index_document(
         source=source,
         document_type="invoice",
     )
@@ -350,10 +314,8 @@ def test_index_document_pdf_processes_all_pages(
     assert saved_doc.page_count == 3
     assert saved_doc.mime_type == "application/pdf"
 
-    index_images = indexing_service.index_pages.call_args.kwargs[
-        "images"
-    ]
-    assert len(index_images) == 3
+    index_pages_call = indexing_service.index_pages.call_args.kwargs
+    assert len(index_pages_call["pages"]) == 3
 
     ocr_pages = ocr_service.process_document.call_args.kwargs[
         "pages"
@@ -372,11 +334,10 @@ def test_index_document_reuses_existing_artifacts(
         repository,
         preparation_service,
         indexing_service,
-        caption_service,
         _,
         _,
         _,
-        _,
+        ocr_service,
     ) = make_pipeline(tmp_path)
 
     existing_document = DocumentRecord(
@@ -388,20 +349,16 @@ def test_index_document_reuses_existing_artifacts(
         height=1000,
         mime_type="image/png",
         document_type="invoice",
-        metadata=DocumentMetadata(document_type="invoice"),
+        page_count=1,
     )
-    embedding = make_embedding_artifact()
-    caption = make_caption_artifact()
-    ocr = make_ocr_artifact()
+    indexing_result = make_indexing_result()
+    ocr_result = make_ocr_result()
 
     repository.get_document_by_checksum.return_value = (
         existing_document
     )
-    repository.get_artifacts.return_value = [
-        embedding,
-        caption,
-        ocr,
-    ]
+    indexing_service.current_result.return_value = indexing_result
+    ocr_service.current_result.return_value = ocr_result
 
     outcome = pipeline.index_document(
         source=make_image_source(),
@@ -412,137 +369,17 @@ def test_index_document_reuses_existing_artifacts(
     repository.save_document.assert_not_called()
     repository.update_processing_status.assert_not_called()
     indexing_service.index_pages.assert_not_called()
-    caption_service.caption_document.assert_not_called()
+    ocr_service.process_document.assert_not_called()
 
     assert outcome.document == existing_document
-    assert outcome.embedding_artifact == embedding
-    assert outcome.caption_artifact == caption
+    assert outcome.indexing_result == indexing_result
+    assert outcome.ocr_result == ocr_result
     assert outcome.reused_document is True
-
-
-def test_caption_failure_does_not_block_indexing(
-    tmp_path: Path,
-) -> None:
-    (
-        pipeline,
-        repository,
-        preparation_service,
-        indexing_service,
-        caption_service,
-        _,
-        _,
-        _,
-        ocr_service,
-    ) = make_pipeline(tmp_path)
-
-    source = make_image_source()
-    page = make_page()
-    embedding = make_embedding_artifact()
-
-    repository.get_document_by_checksum.return_value = None
-    indexing_service.index_pages.return_value = embedding
-    caption_service.caption_document.side_effect = RuntimeError(
-        "Captionmodel kon niet worden uitgevoerd."
-    )
-    ocr_service.process_document.return_value = make_ocr_artifact()
-
-    prepared = PreparedDocument(source=source, pages=[page])
-    preparation_service.prepare.return_value = prepared
-    preparation_service.preprocess_pages.return_value = [
-        make_preprocessing_result(page)
-    ]
-
-    outcome = pipeline.index_document(
-        source=source,
-        document_type="invoice",
-    )
-
-    assert outcome.embedding_artifact == embedding
-    assert outcome.caption_artifact is None
-    assert outcome.embedding_error is None
-    assert (
-        outcome.caption_error
-        == "Captionmodel kon niet worden uitgevoerd."
-    )
-
-    assert outcome.is_searchable is True
-    assert outcome.has_caption is False
-    assert outcome.fully_succeeded is True
-
-    final_call = (
-        repository.update_processing_status.call_args_list[-1]
-    )
-    assert final_call.args[1] == ProcessingStatus.COMPLETED
-    assert (
-        final_call.args[2]
-        == "Captionmodel kon niet worden uitgevoerd."
-    )
-
-
-def test_search_returns_clip_baseline_without_reranking() -> None:
-    (
-        pipeline,
-        _,
-        _,
-        _,
-        _,
-        document_search_service,
-        retrieval_service,
-        _,
-        _,
-    ) = make_pipeline()
-
-    query = SearchQuery(
-        text="invoice with product rows",
-        top_k=2,
-    )
-
-    document_search_service.search.return_value = [
-        SearchResult(
-            document_id="document-1",
-            score=0.91,
-            rank=1,
-            caption="an invoice document",
-            stored_path="data/documents/invoice.png",
-            document_type="invoice",
-        ),
-        SearchResult(
-            document_id="document-2",
-            score=0.72,
-            rank=2,
-            caption="a receipt",
-            stored_path="data/documents/receipt.png",
-            document_type="receipt",
-        ),
-    ]
-
-    outcome = pipeline.search(
-        query=query,
-        use_hybrid_ranking=False,
-    )
-
-    document_search_service.search.assert_called_once_with(
-        query
-    )
-    retrieval_service.text_similarity.assert_not_called()
-
-    assert outcome.ranking_mode == "clip"
-    assert len(outcome.results) == 2
-
-    assert outcome.results[0].document_id == "document-1"
-    assert outcome.results[0].rank == 1
-    assert outcome.results[0].final_score == 0.91
-    assert outcome.results[0].clip_score == 0.91
-    assert outcome.results[0].caption_score == 0.0
-    assert outcome.results[0].metadata_score == 0.0
-
-    assert outcome.duration_ms >= 0
 
 
 def test_hybrid_search_reranks_larger_candidate_pool() -> None:
     (
         pipeline,
-        _,
         _,
         _,
         _,
@@ -557,50 +394,35 @@ def test_hybrid_search_reranks_larger_candidate_pool() -> None:
         top_k=2,
     )
 
+    # document-b has a lower visual score but a strong text match;
+    # hybrid ranking should rank it above document-a.
     document_search_service.search.return_value = [
         SearchResult(
             document_id="document-a",
-            score=0.90,
+            score=0.45,
             rank=1,
-            caption="a landscape photograph",
             stored_path="data/documents/a.png",
             document_type="receipt",
         ),
         SearchResult(
             document_id="document-b",
-            score=0.80,
+            score=0.40,
             rank=2,
-            caption="an invoice with product rows",
             stored_path="data/documents/b.png",
             document_type="invoice",
+            text_score=0.80,
         ),
         SearchResult(
             document_id="document-c",
-            score=0.70,
+            score=0.30,
             rank=3,
-            caption=None,
             stored_path="data/documents/c.png",
             document_type="purchase_order",
         ),
     ]
 
-    similarity_scores = {
-        ("invoice", "a landscape photograph"): 0.0,
-        ("invoice", "receipt"): 0.0,
-        ("invoice", "an invoice with product rows"): 1.0,
-        ("invoice", "invoice"): 1.0,
-        ("invoice", "purchase order"): 0.0,
-    }
-
-    retrieval_service.text_similarity.side_effect = (
-        lambda first, second: similarity_scores[
-            (first, second)
-        ]
-    )
-
     outcome = pipeline.search(
         query=query,
-        use_hybrid_ranking=True,
     )
 
     requested_query = (
@@ -616,16 +438,17 @@ def test_hybrid_search_reranks_larger_candidate_pool() -> None:
     first_result = outcome.results[0]
     second_result = outcome.results[1]
 
+    # document-b: 0.60*0.40 + 0.30*0.80 + 0.10*0 = 0.24 + 0.24 = 0.48
     assert first_result.document_id == "document-b"
     assert first_result.rank == 1
-    assert first_result.clip_score == 0.80
-    assert first_result.caption_score == 1.0
-    assert first_result.metadata_score == 1.0
-    assert first_result.final_score == pytest.approx(0.86)
+    assert first_result.visual_score == 0.40
+    assert first_result.text_score == pytest.approx(0.80)
+    assert first_result.final_score == pytest.approx(0.48)
 
+    # document-a: no text or fts score, final = visual = 0.45
     assert second_result.document_id == "document-a"
     assert second_result.rank == 2
-    assert second_result.final_score == pytest.approx(0.63)
+    assert second_result.final_score == pytest.approx(0.45)
 
 
 def test_analyze_document_uses_preparation_service(
@@ -635,7 +458,6 @@ def test_analyze_document_uses_preparation_service(
         pipeline,
         repository,
         preparation_service,
-        _,
         _,
         _,
         _,
@@ -655,7 +477,6 @@ def test_analyze_document_uses_preparation_service(
         height=1000,
         mime_type="image/png",
         document_type="invoice",
-        metadata=DocumentMetadata(document_type="invoice"),
     )
 
     repository.get_document.return_value = document
@@ -688,7 +509,6 @@ def test_analyze_document_uses_preparation_service(
 
     analysis_result = AnalysisResult(
         text="A signature may be visible at the bottom.",
-        source="open_flamingo",
         model_name="fake-open-flamingo",
         model_version="version-1",
         duration_ms=1200.0,
@@ -715,7 +535,6 @@ def test_analyze_document_uses_preparation_service(
     assert outcome.document == document
     assert outcome.question == "Is there a signature?"
     assert outcome.analysis == analysis_result
-    assert outcome.used_fallback is False
     assert outcome.duration_ms >= 0
 
 
@@ -726,7 +545,6 @@ def test_analyze_document_rejects_unknown_document(
         pipeline,
         repository,
         preparation_service,
-        _,
         _,
         _,
         _,
@@ -747,3 +565,146 @@ def test_analyze_document_rejects_unknown_document(
 
     preparation_service.prepare.assert_not_called()
     analysis_service.analyze.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Auto-classification tests
+# ---------------------------------------------------------------------------
+
+def make_pipeline_with_classifier(
+    tmp_path: Path,
+) -> tuple[
+    DocumentIntelligencePipeline,
+    MagicMock,  # repository
+    MagicMock,  # preparation_service
+    MagicMock,  # indexing_service
+    MagicMock,  # ocr_service
+    MagicMock,  # classification_service
+]:
+    upload_dir = tmp_path / "uploads"
+
+    repository = create_autospec(DocumentRepository, instance=True)
+    preparation_service = create_autospec(DocumentPreparationService, instance=True)
+    indexing_service = create_autospec(IndexingService, instance=True)
+    document_search_service = create_autospec(DocumentSearchService, instance=True)
+    retrieval_service = create_autospec(RetrievalService, instance=True)
+    analysis_service = create_autospec(AnalysisService, instance=True)
+    ocr_service = create_autospec(DocumentOCRService, instance=True)
+    classification_service = create_autospec(
+        DocumentClassificationService, instance=True
+    )
+
+    indexing_service.model_name = "fake-clip"
+    ocr_service.model_name = "fake-doctr"
+    ocr_service.model_version = "version-1"
+
+    pipeline = DocumentIntelligencePipeline(
+        document_repository=repository,
+        preparation_service=preparation_service,
+        upload_dir=upload_dir,
+        indexing_service=indexing_service,
+        document_search_service=document_search_service,
+        retrieval_service=retrieval_service,
+        analysis_service=analysis_service,
+        ocr_service=ocr_service,
+        score_calibrator=LinearScoreCalibrator(noise_floor=0.04, ceiling=0.28),
+        classification_service=classification_service,
+    )
+
+    return pipeline, repository, preparation_service, indexing_service, ocr_service, classification_service
+
+
+def test_auto_classify_calls_classification_service_and_updates_type(
+    tmp_path: Path,
+) -> None:
+    (
+        pipeline,
+        repository,
+        preparation_service,
+        indexing_service,
+        ocr_service,
+        classification_service,
+    ) = make_pipeline_with_classifier(tmp_path)
+
+    source = make_image_source()
+    page = make_page(1)
+    indexing_result = make_indexing_result()
+    ocr_result = make_ocr_result()
+
+    classification_result = ClassificationResult(
+        document_type="invoice",
+        confidence=0.82,
+        visual_score=0.75,
+        lexical_score=0.65,
+        is_confident=True,
+    )
+
+    repository.get_document_by_checksum.return_value = None
+    repository.get_document.return_value = None
+    indexing_service.index_pages.return_value = indexing_result
+    ocr_service.process_document.return_value = ocr_result
+    classification_service.classify.return_value = classification_result
+
+    prepared = PreparedDocument(source=source, pages=[page])
+    preparation_service.prepare.return_value = prepared
+    preparation_service.preprocess_pages.return_value = [make_preprocessing_result(page)]
+
+    outcome = pipeline.index_document(source=source, document_type=None)
+
+    classification_service.classify.assert_called_once()
+    repository.update_document_type.assert_called_once_with(
+        document_id=repository.save_document.call_args.args[0].id,
+        document_type="invoice",
+    )
+    assert outcome.classification_confidence == pytest.approx(0.82)
+
+
+def test_auto_classify_raises_without_classification_service(
+    tmp_path: Path,
+) -> None:
+    (
+        pipeline,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+        _,
+    ) = make_pipeline(tmp_path)
+
+    with pytest.raises(ValueError, match="classificationservice"):
+        pipeline.index_document(source=make_image_source(), document_type=None)
+
+
+def test_explicit_document_type_skips_classification(
+    tmp_path: Path,
+) -> None:
+    (
+        pipeline,
+        repository,
+        preparation_service,
+        indexing_service,
+        ocr_service,
+        classification_service,
+    ) = make_pipeline_with_classifier(tmp_path)
+
+    source = make_image_source()
+    page = make_page(1)
+    indexing_result = make_indexing_result()
+    ocr_result = make_ocr_result()
+
+    repository.get_document_by_checksum.return_value = None
+    repository.get_document.return_value = None
+    indexing_service.index_pages.return_value = indexing_result
+    ocr_service.process_document.return_value = ocr_result
+
+    prepared = PreparedDocument(source=source, pages=[page])
+    preparation_service.prepare.return_value = prepared
+    preparation_service.preprocess_pages.return_value = [make_preprocessing_result(page)]
+
+    outcome = pipeline.index_document(source=source, document_type="receipt")
+
+    classification_service.classify.assert_not_called()
+    repository.update_document_type.assert_not_called()
+    assert outcome.classification_confidence is None

@@ -1,7 +1,7 @@
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageSequence, UnidentifiedImageError
 
 from app.domain.prepared_document import (
     DocumentPage,
@@ -47,16 +47,26 @@ class ImageDocumentStrategy(DocumentFormatStrategy):
     ) -> list[DocumentPage]:
         try:
             with Image.open(BytesIO(source.content)) as image:
-                prepared_image = image.convert("RGB").copy()
+                pages = [
+                    DocumentPage(
+                        page_number=index,
+                        image=frame.convert("RGB").copy(),
+                    )
+                    for index, frame in enumerate(
+                        ImageSequence.Iterator(image),
+                        start=1,
+                    )
+                ]
 
         except (UnidentifiedImageError, OSError) as error:
             raise InvalidImageDocumentError(
                 f"Cannot read image document: {source.filename}"
             ) from error
 
-        return [
-            DocumentPage(
-                page_number=1,
-                image=prepared_image,
+        if not pages:
+            raise InvalidImageDocumentError(
+                f"Image document contains no pages: "
+                f"{source.filename}"
             )
-        ]
+
+        return pages

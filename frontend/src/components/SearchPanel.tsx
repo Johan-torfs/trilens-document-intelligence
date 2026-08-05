@@ -9,13 +9,11 @@ type SearchPanelProps = {
   query: string;
   documentType: string;
   topK: number;
-  useHybrid: boolean;
   error: string | null;
   isLoading: boolean;
   onQueryChange: (value: string) => void;
   onDocumentTypeChange: (value: string) => void;
   onTopKChange: (value: number) => void;
-  onHybridChange: (value: boolean) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 };
 
@@ -23,13 +21,11 @@ export function SearchPanel({
   query,
   documentType,
   topK,
-  useHybrid,
   error,
   isLoading,
   onQueryChange,
   onDocumentTypeChange,
   onTopKChange,
-  onHybridChange,
   onSubmit,
 }: SearchPanelProps) {
   return (
@@ -127,38 +123,6 @@ export function SearchPanel({
               />
             </div>
           </div>
-
-          {/* Hybrid ranking toggle */}
-          <label className="flex cursor-pointer items-center gap-4 rounded-xl border border-slate-200 bg-slate-50 p-3.5 transition hover:bg-slate-100">
-            <div className="relative shrink-0">
-              <input
-                type="checkbox"
-                checked={useHybrid}
-                onChange={(event) => {
-                  onHybridChange(event.target.checked);
-                }}
-                className="sr-only"
-              />
-              <div
-                className={`h-5 w-9 rounded-full transition-colors ${
-                  useHybrid ? "bg-indigo-600" : "bg-slate-300"
-                }`}
-              />
-              <div
-                className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
-                  useHybrid ? "translate-x-4" : "translate-x-0"
-                }`}
-              />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-slate-700">
-                Hybride ranking
-              </p>
-              <p className="text-xs text-slate-500">
-                Combineert CLIP- en captionscores
-              </p>
-            </div>
-          </label>
 
           <button
             type="submit"

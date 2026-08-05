@@ -22,27 +22,3 @@ def cosine_similarity(
     return float(
         np.dot(first, second) / (first_norm * second_norm)
     )
-
-
-def rank_by_similarity(
-    query_embedding: np.ndarray,
-    document_embeddings: dict[str, np.ndarray],
-    top_k: int = 5,
-) -> list[tuple[str, float]]:
-    if top_k <= 0:
-        raise ValueError("top_k moet groter zijn dan nul.")
-
-    ranked = [
-        (
-            document_id,
-            cosine_similarity(query_embedding, embedding),
-        )
-        for document_id, embedding in document_embeddings.items()
-    ]
-
-    ranked.sort(
-        key=lambda item: item[1],
-        reverse=True,
-    )
-
-    return ranked[:top_k]

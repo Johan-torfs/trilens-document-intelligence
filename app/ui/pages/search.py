@@ -20,8 +20,7 @@ DOCUMENT_TYPES = {
 st.title("Document search")
 
 st.write(
-    "Zoek documenten met CLIP-ranking "
-    "of optionele hybride ranking."
+    "Zoek documenten met hybride ranking."
 )
 
 with st.form("document-search-form"):
@@ -43,14 +42,6 @@ with st.form("document-search-form"):
         max_value=20,
         value=5,
         step=1,
-    )
-
-    use_hybrid_ranking = st.checkbox(
-        "Gebruik hybride ranking",
-        help=(
-            "Combineert CLIP-afbeeldingssimilariteit, "
-            "captiontekst en documentmetadata."
-        ),
     )
 
     submitted = st.form_submit_button(
@@ -78,7 +69,6 @@ if submitted:
         with st.spinner("Documenten doorzoeken..."):
             outcome = pipeline.search(
                 query=query,
-                use_hybrid_ranking=use_hybrid_ranking,
             )
 
         st.session_state["search_outcome"] = outcome
@@ -136,13 +126,8 @@ if outcome is not None:
                 f"#{result.rank} — {result.document_type}"
             )
 
-            details_column.write(
-                result.caption
-                or "Geen BLIP-caption beschikbaar."
-            )
-
-            score_col1, score_col2 = (
-                details_column.columns(2)
+            score_col1, score_col2, score_col3 = (
+                details_column.columns(3)
             )
 
             score_col1.metric(
@@ -151,24 +136,16 @@ if outcome is not None:
             )
 
             score_col2.metric(
-                "CLIP score",
-                f"{result.clip_score:.3f}",
+                "Visual score",
+                f"{result.visual_score:.3f}",
             )
 
-            if outcome.ranking_mode == "hybrid":
-                score_col3, score_col4 = (
-                    details_column.columns(2)
-                )
+            score_col3, = (details_column.columns(1),)
 
-                score_col3.metric(
-                    "Caption score",
-                    f"{result.caption_score:.3f}",
-                )
-
-                score_col4.metric(
-                    "Metadata score",
-                    f"{result.metadata_score:.3f}",
-                )
+            score_col3.metric(
+                "Text score",
+                f"{result.text_score:.3f}",
+            )
 
             details_column.caption(
                 f"Document ID: {result.document_id}"

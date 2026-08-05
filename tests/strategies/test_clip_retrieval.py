@@ -3,19 +3,19 @@ import pytest
 from PIL import Image
 from pathlib import Path
 
-from app.strategies.clip_retrieval import ClipRetrievalStrategy
+from app.strategies.clip_embedding import ClipEmbeddingStrategy
 from app.preprocessing.pipeline import preprocess_image
 
 pytestmark = pytest.mark.model_integration
 
 
 @pytest.fixture(scope="module")
-def strategy() -> ClipRetrievalStrategy:
-    return ClipRetrievalStrategy()
+def strategy() -> ClipEmbeddingStrategy:
+    return ClipEmbeddingStrategy()
 
 
 def test_image_embedding_is_normalized_vector(
-    strategy: ClipRetrievalStrategy,
+    strategy: ClipEmbeddingStrategy,
 ) -> None:
     image = Image.new("RGB", (400, 300), color="white")
 
@@ -30,7 +30,7 @@ def test_image_embedding_is_normalized_vector(
 
 
 def test_text_embedding_is_normalized_vector(
-    strategy: ClipRetrievalStrategy,
+    strategy: ClipEmbeddingStrategy,
 ) -> None:
     embedding = strategy.embed_text("an invoice")
 
@@ -43,7 +43,7 @@ def test_text_embedding_is_normalized_vector(
 
 
 def test_image_and_text_embeddings_have_same_dimensions(
-    strategy: ClipRetrievalStrategy,
+    strategy: ClipEmbeddingStrategy,
 ) -> None:
     image = Image.new("RGB", (400, 300), color="white")
 
@@ -54,7 +54,7 @@ def test_image_and_text_embeddings_have_same_dimensions(
 
 
 def test_identical_texts_have_similarity_one(
-    strategy: ClipRetrievalStrategy,
+    strategy: ClipEmbeddingStrategy,
 ) -> None:
     first_embedding = strategy.embed_text("an invoice")
     second_embedding = strategy.embed_text("an invoice")
@@ -68,7 +68,7 @@ def test_identical_texts_have_similarity_one(
 
 @pytest.mark.skip(reason="Requires generated test image not present in repo")
 def test_invoice_matches_invoice_query_better_than_landscape_query(
-    strategy: ClipRetrievalStrategy,
+    strategy: ClipEmbeddingStrategy,
 ) -> None:
     image_path = Path(
         "data/generated/invoices/invoice_001.png"

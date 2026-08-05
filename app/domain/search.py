@@ -12,6 +12,8 @@ class SearchResult(BaseModel):
     score: float
     rank: int = Field(ge=1)
 
-    caption: str | None = None
     stored_path: str
     document_type: str
+    page_number: int | None = None
+    text_score: float = 0.0
+    fts_score: float = 0.0

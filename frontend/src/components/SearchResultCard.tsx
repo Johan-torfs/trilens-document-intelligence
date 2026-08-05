@@ -56,27 +56,16 @@ export function SearchResultCard({
               </p>
             </div>
             <span className="shrink-0 rounded-full bg-slate-900 px-3 py-1 font-mono text-sm font-semibold text-white">
-              {Math.round(result.calibrated_score * 100)}%
+              {Math.round(result.final_score * 100)}%
             </span>
           </div>
-
-          {/* Caption */}
-          {result.caption ? (
-            <p className="mt-4 text-sm leading-relaxed text-slate-600">
-              {result.caption}
-            </p>
-          ) : (
-            <p className="mt-4 text-sm italic text-slate-400">
-              Geen BLIP-caption beschikbaar.
-            </p>
-          )}
 
           {/* Score grid */}
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Score label="Final" value={result.final_score} />
-            <Score label="Match" value={result.calibrated_score} />
-            <Score label="Caption" value={result.caption_score} />
-            <Score label="Metadata" value={result.metadata_score} />
+            <Score label="Visual" value={result.visual_score} />
+            <Score label="Text" value={result.text_score} />
+            <Score label="Lexical" value={result.fts_score} />
           </div>
 
           {/* Analysis section */}

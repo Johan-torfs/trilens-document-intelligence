@@ -1,95 +1,236 @@
-from pathlib import Path
-from uuid import uuid4
+from collections.abc import Sequence
+from dataclasses import dataclass
+from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
-from PIL import Image
 
-from app.domain.document import ArtifactType, ModelArtifact
-from app.repositories.document_repository import DocumentRepository
+from app.domain.document import DocumentRecord
+from app.domain.prepared_document import DocumentPage
+from app.domain.vector import VectorPoint
 from app.repositories.vector_repository import VectorRepository
-from app.strategies.retrieval import RetrievalStrategy
+from app.strategies.embedding import EmbeddingStrategy
+
+
+VISUAL_VECTOR_NAME = "visual"
+VISUAL_UNIT_TYPE = "page"
+
+
+class DocumentIndexingError(RuntimeError):
+    pass
+
+
+@dataclass(frozen=True)
+class IndexingResult:
+    document_id: str
+    page_count: int
+    dimensions: int
+    model_name: str
+    model_version: str | None
+    reused_existing: bool
 
 
 class IndexingService:
     def __init__(
         self,
-        strategy: RetrievalStrategy,
+        strategy: EmbeddingStrategy,
         vector_repository: VectorRepository,
-        document_repository: DocumentRepository,
     ) -> None:
         self._strategy = strategy
         self._vector_repository = vector_repository
-        self._document_repository = document_repository
 
     @property
     def model_name(self) -> str:
         return self._strategy.model_name
 
-    def index_image(
+    @property
+    def model_version(self) -> str | None:
+        return self._strategy.model_version
+
+    def current_result(
         self,
-        document_id: str,
-        image: Image.Image,
-    ) -> ModelArtifact:
-        embedding = self._strategy.embed_image(image)
+        document: DocumentRecord,
+    ) -> IndexingResult | None:
+        try:
+            indexed_page_count = self._vector_repository.count(
+                filters=self._filters(document)
+            )
+        except Exception as error:
+            raise DocumentIndexingError(
+                f"Could not inspect vectors for document "
+                f"'{document.id}': {error}"
+            ) from error
 
-        artifact_id = str(uuid4())
+        if indexed_page_count != document.page_count:
+            return None
 
-        storage_path = self._vector_repository.save(
-            artifact_id=artifact_id,
-            vector=embedding,
+        return IndexingResult(
+            document_id=document.id,
+            page_count=document.page_count,
+            dimensions=0,
+            model_name=self.model_name,
+            model_version=self.model_version,
+            reused_existing=True,
         )
-
-        artifact = ModelArtifact(
-            id=artifact_id,
-            document_id=document_id,
-            artifact_type=ArtifactType.IMAGE_EMBEDDING,
-            model_name=self._strategy.model_name,
-            storage_path=str(storage_path),
-            dimensions=len(embedding),
-        )
-
-        self._document_repository.save_artifact(artifact)
-
-        return artifact
 
     def index_pages(
         self,
-        document_id: str,
-        images: list[Image.Image],
-    ) -> ModelArtifact:
-        if len(images) == 1:
-            return self.index_image(document_id, images[0])
+        document: DocumentRecord,
+        pages: Sequence[DocumentPage],
+    ) -> IndexingResult:
+        self._validate_pages(document, pages)
 
-        embeddings = [
-            self._strategy.embed_image(img) for img in images
+        cached_result = self.current_result(document)
+
+        if cached_result is not None:
+            return cached_result
+
+        try:
+            embeddings = np.asarray(
+                self._strategy.embed_images(
+                    [page.image for page in pages]
+                ),
+                dtype=np.float32,
+            )
+
+            self._validate_embeddings(
+                embeddings=embeddings,
+                expected_count=len(pages),
+            )
+
+            points = [
+                VectorPoint(
+                    id=self._point_id(
+                        document_id=document.id,
+                        page_number=page.page_number,
+                    ),
+                    vector_name=VISUAL_VECTOR_NAME,
+                    values=embeddings[index],
+                    payload=self._payload(
+                        document=document,
+                        page_number=page.page_number,
+                    ),
+                )
+                for index, page in enumerate(pages)
+            ]
+
+            self._vector_repository.save_batch(points)
+
+            stored_page_count = self._vector_repository.count(
+                filters=self._filters(document)
+            )
+
+        except DocumentIndexingError:
+            raise
+
+        except Exception as error:
+            raise DocumentIndexingError(
+                f"Visual indexing failed for document "
+                f"'{document.id}': {error}"
+            ) from error
+
+        if stored_page_count != len(pages):
+            raise DocumentIndexingError(
+                f"Expected {len(pages)} visual vectors for document "
+                f"'{document.id}', but found {stored_page_count}."
+            )
+
+        return IndexingResult(
+            document_id=document.id,
+            page_count=len(pages),
+            dimensions=int(embeddings.shape[1]),
+            model_name=self.model_name,
+            model_version=self.model_version,
+            reused_existing=False,
+        )
+
+    def _filters(
+        self,
+        document: DocumentRecord,
+    ) -> dict[str, str]:
+        return {
+            "document_id": document.id,
+            "checksum": document.checksum,
+            "unit_type": VISUAL_UNIT_TYPE,
+            "vector_type": VISUAL_VECTOR_NAME,
+            "model_name": self.model_name,
+            "model_version": self.model_version or "",
+        }
+
+    def _payload(
+        self,
+        document: DocumentRecord,
+        page_number: int,
+    ) -> dict[str, str | int]:
+        return {
+            **self._filters(document),
+            "document_type": document.document_type,
+            "page_number": page_number,
+        }
+
+    @staticmethod
+    def _point_id(
+        document_id: str,
+        page_number: int,
+    ) -> str:
+        identity = (
+            f"{VISUAL_VECTOR_NAME}:"
+            f"{document_id}:"
+            f"{page_number}"
+        )
+
+        return str(uuid5(NAMESPACE_URL, identity))
+
+    @staticmethod
+    def _validate_pages(
+        document: DocumentRecord,
+        pages: Sequence[DocumentPage],
+    ) -> None:
+        if not pages:
+            raise ValueError(
+                "At least one document page is required."
+            )
+
+        if len(pages) != document.page_count:
+            raise ValueError(
+                f"Document expects {document.page_count} pages, "
+                f"but received {len(pages)}."
+            )
+
+        page_numbers = [
+            page.page_number
+            for page in pages
         ]
 
-        normalized = []
-        for e in embeddings:
-            norm = np.linalg.norm(e)
-            normalized.append(e / norm if norm > 0.0 else e)
+        expected = list(range(1, len(pages) + 1))
 
-        combined = np.mean(normalized, axis=0)
-        combined_norm = np.linalg.norm(combined)
-        if combined_norm > 0.0:
-            combined = combined / combined_norm
+        if page_numbers != expected:
+            raise ValueError(
+                "Document pages must be ordered and numbered "
+                "starting at one."
+            )
 
-        artifact_id = str(uuid4())
+    @staticmethod
+    def _validate_embeddings(
+        embeddings: np.ndarray,
+        expected_count: int,
+    ) -> None:
+        if embeddings.ndim != 2:
+            raise ValueError(
+                "Image embeddings must be a two-dimensional batch."
+            )
 
-        storage_path = self._vector_repository.save(
-            artifact_id=artifact_id,
-            vector=combined,
-        )
+        if embeddings.shape[0] != expected_count:
+            raise ValueError(
+                f"Expected {expected_count} image embeddings, "
+                f"but received {embeddings.shape[0]}."
+            )
 
-        artifact = ModelArtifact(
-            id=artifact_id,
-            document_id=document_id,
-            artifact_type=ArtifactType.IMAGE_EMBEDDING,
-            model_name=self._strategy.model_name,
-            storage_path=str(storage_path),
-            dimensions=len(combined),
-        )
+        if embeddings.shape[1] <= 0:
+            raise ValueError(
+                "Image embeddings may not be empty."
+            )
 
-        self._document_repository.save_artifact(artifact)
-
-        return artifact
+        if not np.isfinite(embeddings).all():
+            raise ValueError(
+                "Image embeddings contain non-finite values."
+            )
